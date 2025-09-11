@@ -171,8 +171,6 @@ Remember: Each image must tell a meaningful part of the story while maintaining 
 """
 
 
-
-
 def generate_story_id() -> str:
     """Generate a unique story ID."""
     return str(uuid.uuid4())
@@ -183,7 +181,9 @@ def create_timestamp() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def log_api_call(endpoint: str, request_data: Dict[str, Any], response_data: Dict[str, Any] = None):
+def log_api_call(
+    endpoint: str, request_data: Dict[str, Any], response_data: Dict[str, Any] = None
+):
     """Log API calls with timestamps."""
     logger.info(f"API Call - {endpoint} - {create_timestamp()}")
     logger.debug(f"Request: {json.dumps(request_data, indent=2)}")
@@ -195,51 +195,59 @@ def validate_story_consistency(panels: List[Dict[str, Any]]) -> bool:
     """Validate character consistency across panels."""
     if not panels or len(panels) != 6:
         return False
-    
+
     # Check if character name is consistent
     character_names = set()
     for panel in panels:
-        if 'character_sheet' in panel and 'name' in panel['character_sheet']:
-            character_names.add(panel['character_sheet']['name'])
-    
+        if "character_sheet" in panel and "name" in panel["character_sheet"]:
+            character_names.add(panel["character_sheet"]["name"])
+
     return len(character_names) == 1
 
 
 def create_structured_image_prompt(panel_data: Dict[str, Any]) -> str:
     """Create detailed, story-focused image generation prompt with character consistency and meaningful narrative elements."""
-    character = panel_data.get('character_sheet', {})
-    props = panel_data.get('prop_sheet', {})
-    style = panel_data.get('style_guide', {})
-    dialogue_text = panel_data.get('dialogue_text', '')
-    emotional_tone = panel_data.get('emotional_tone', 'neutral')
-    panel_number = panel_data.get('panel_number', 1)
+    character = panel_data.get("character_sheet", {})
+    props = panel_data.get("prop_sheet", {})
+    style = panel_data.get("style_guide", {})
+    dialogue_text = panel_data.get("dialogue_text", "")
+    emotional_tone = panel_data.get("emotional_tone", "neutral")
+    panel_number = panel_data.get("panel_number", 1)
 
     # Extract CHARACTER_SHEET details for consistency
-    char_name = character.get('name', 'Character')
-    char_age = character.get('age', 'young adult')
-    char_appearance = character.get('appearance', 'anime character with expressive eyes')
-    char_personality = character.get('personality', 'determined and hopeful')
-    char_goals = character.get('goals', 'pursuing personal growth')
-    char_fears = character.get('fears', 'facing challenges')
-    char_strengths = character.get('strengths', 'resilience and hope')
+    char_name = character.get("name", "Character")
+    char_age = character.get("age", "young adult")
+    char_appearance = character.get(
+        "appearance", "anime character with expressive eyes"
+    )
+    char_personality = character.get("personality", "determined and hopeful")
+    char_goals = character.get("goals", "pursuing personal growth")
+    char_fears = character.get("fears", "facing challenges")
+    char_strengths = character.get("strengths", "resilience and hope")
 
     # Extract PROP_SHEET details
-    items = props.get('items', ['symbolic item'])
-    main_item = items[0] if items else 'symbolic item'
-    environment = props.get('environment', 'meaningful setting that supports the story')
-    lighting = props.get('lighting', 'dramatic lighting that conveys emotion')
-    mood_elements = props.get('mood_elements', ['elements that enhance emotional atmosphere'])
+    items = props.get("items", ["symbolic item"])
+    main_item = items[0] if items else "symbolic item"
+    environment = props.get("environment", "meaningful setting that supports the story")
+    lighting = props.get("lighting", "dramatic lighting that conveys emotion")
+    mood_elements = props.get(
+        "mood_elements", ["elements that enhance emotional atmosphere"]
+    )
 
     # Extract STYLE_GUIDE details
-    art_style = style.get('art_style', 'clean manga style with emotional depth')
-    color_palette = style.get('color_palette', 'colors that reflect emotional journey')
-    visual_elements = style.get('visual_elements', ['meaningful visual storytelling elements'])
+    art_style = style.get("art_style", "clean manga style with emotional depth")
+    color_palette = style.get("color_palette", "colors that reflect emotional journey")
+    visual_elements = style.get(
+        "visual_elements", ["meaningful visual storytelling elements"]
+    )
 
     # Get clean anime style based on emotional tone (no franchise references)
     anime_style = get_anime_style_by_emotion(emotional_tone)
 
     # Extract emotional cues from dialogue text
-    emotional_cues = _extract_emotional_cues_from_dialogue(dialogue_text, emotional_tone)
+    emotional_cues = _extract_emotional_cues_from_dialogue(
+        dialogue_text, emotional_tone
+    )
 
     # Get panel-specific framing
     panel_framing = _get_panel_specific_framing(panel_number, emotional_tone)
@@ -276,129 +284,139 @@ TECHNICAL REQUIREMENTS:
 
     return prompt.strip()
 
-def _extract_emotional_cues_from_dialogue(dialogue_text: str, emotional_tone: str) -> Dict[str, str]:
+
+def _extract_emotional_cues_from_dialogue(
+    dialogue_text: str, emotional_tone: str
+) -> Dict[str, str]:
     """Extract lighting and expression cues from dialogue text and emotional tone."""
     # Map emotional tones to lighting and expression
     emotional_mappings = {
-        'happy': {
-            'lighting': 'bright, warm lighting with golden highlights',
-            'expression': 'bright, cheerful'
+        "happy": {
+            "lighting": "bright, warm lighting with golden highlights",
+            "expression": "bright, cheerful",
         },
-        'excited': {
-            'lighting': 'vibrant, energetic lighting with dynamic shadows',
-            'expression': 'enthusiastic, animated'
+        "excited": {
+            "lighting": "vibrant, energetic lighting with dynamic shadows",
+            "expression": "enthusiastic, animated",
         },
-        'cheerful': {
-            'lighting': 'soft, warm lighting with gentle highlights',
-            'expression': 'friendly, optimistic'
+        "cheerful": {
+            "lighting": "soft, warm lighting with gentle highlights",
+            "expression": "friendly, optimistic",
         },
-        'contemplative': {
-            'lighting': 'soft, diffused lighting with subtle shadows',
-            'expression': 'thoughtful, introspective'
+        "contemplative": {
+            "lighting": "soft, diffused lighting with subtle shadows",
+            "expression": "thoughtful, introspective",
         },
-        'peaceful': {
-            'lighting': 'gentle, serene lighting with soft highlights',
-            'expression': 'calm, content'
+        "peaceful": {
+            "lighting": "gentle, serene lighting with soft highlights",
+            "expression": "calm, content",
         },
-        'calm': {
-            'lighting': 'balanced, natural lighting with smooth transitions',
-            'expression': 'serene, composed'
+        "calm": {
+            "lighting": "balanced, natural lighting with smooth transitions",
+            "expression": "serene, composed",
         },
-        'determined': {
-            'lighting': 'dramatic lighting with strong contrasts',
-            'expression': 'focused, resolute'
+        "determined": {
+            "lighting": "dramatic lighting with strong contrasts",
+            "expression": "focused, resolute",
         },
-        'intense': {
-            'lighting': 'high contrast lighting with dramatic shadows',
-            'expression': 'intense, concentrated'
+        "intense": {
+            "lighting": "high contrast lighting with dramatic shadows",
+            "expression": "intense, concentrated",
         },
-        'focused': {
-            'lighting': 'direct lighting with clear focus',
-            'expression': 'alert, attentive'
+        "focused": {
+            "lighting": "direct lighting with clear focus",
+            "expression": "alert, attentive",
         },
-        'sad': {
-            'lighting': 'muted, cool lighting with soft shadows',
-            'expression': 'melancholic, gentle'
+        "sad": {
+            "lighting": "muted, cool lighting with soft shadows",
+            "expression": "melancholic, gentle",
         },
-        'melancholic': {
-            'lighting': 'soft, blue-tinted lighting with gentle shadows',
-            'expression': 'contemplative, wistful'
+        "melancholic": {
+            "lighting": "soft, blue-tinted lighting with gentle shadows",
+            "expression": "contemplative, wistful",
         },
-        'nostalgic': {
-            'lighting': 'warm, golden lighting with soft focus',
-            'expression': 'dreamy, reflective'
+        "nostalgic": {
+            "lighting": "warm, golden lighting with soft focus",
+            "expression": "dreamy, reflective",
         },
-        'inspired': {
-            'lighting': 'bright, uplifting lighting with sparkle effects',
-            'expression': 'awestruck, motivated'
+        "inspired": {
+            "lighting": "bright, uplifting lighting with sparkle effects",
+            "expression": "awestruck, motivated",
         },
-        'artistic': {
-            'lighting': 'creative lighting with artistic shadows',
-            'expression': 'imaginative, creative'
+        "artistic": {
+            "lighting": "creative lighting with artistic shadows",
+            "expression": "imaginative, creative",
         },
-        'playful': {
-            'lighting': 'bright, colorful lighting with fun highlights',
-            'expression': 'mischievous, energetic'
+        "playful": {
+            "lighting": "bright, colorful lighting with fun highlights",
+            "expression": "mischievous, energetic",
         },
-        'adventurous': {
-            'lighting': 'dynamic lighting with movement',
-            'expression': 'bold, courageous'
+        "adventurous": {
+            "lighting": "dynamic lighting with movement",
+            "expression": "bold, courageous",
         },
-        'serious': {
-            'lighting': 'dramatic lighting with deep shadows',
-            'expression': 'solemn, focused'
+        "serious": {
+            "lighting": "dramatic lighting with deep shadows",
+            "expression": "solemn, focused",
         },
-        'mysterious': {
-            'lighting': 'mysterious lighting with hidden elements',
-            'expression': 'enigmatic, curious'
-        }
+        "mysterious": {
+            "lighting": "mysterious lighting with hidden elements",
+            "expression": "enigmatic, curious",
+        },
     }
-    
-    return emotional_mappings.get(emotional_tone, {
-        'lighting': 'natural, balanced lighting',
-        'expression': 'neutral, composed'
-    })
 
-def _get_panel_specific_framing(panel_number: int, emotional_tone: str) -> Dict[str, str]:
+    return emotional_mappings.get(
+        emotional_tone,
+        {"lighting": "natural, balanced lighting", "expression": "neutral, composed"},
+    )
+
+
+def _get_panel_specific_framing(
+    panel_number: int, emotional_tone: str
+) -> Dict[str, str]:
     """Get panel-specific framing requirements based on story arc position."""
     framing_templates = {
         1: {
-            'composition': 'Medium close-up shot focusing on character introduction',
-            'angle': 'Straight-on angle to establish character presence',
-            'focus': 'Character\'s face and upper body, establishing their identity and current state'
+            "composition": "Medium close-up shot focusing on character introduction",
+            "angle": "Straight-on angle to establish character presence",
+            "focus": "Character's face and upper body, establishing their identity and current state",
         },
         2: {
-            'composition': 'Wide shot showing character and their obstacle/challenge',
-            'angle': 'Slightly elevated angle to emphasize the challenge',
-            'focus': 'Character in relation to their environment and the obstacle they face'
+            "composition": "Wide shot showing character and their obstacle/challenge",
+            "angle": "Slightly elevated angle to emphasize the challenge",
+            "focus": "Character in relation to their environment and the obstacle they face",
         },
         3: {
-            'composition': 'Close-up shot emphasizing internal reflection',
-            'angle': 'Eye-level angle for intimate connection',
-            'focus': 'Character\'s facial expression and eyes, showing internal processing'
+            "composition": "Close-up shot emphasizing internal reflection",
+            "angle": "Eye-level angle for intimate connection",
+            "focus": "Character's facial expression and eyes, showing internal processing",
         },
         4: {
-            'composition': 'Dynamic angle shot capturing moment of discovery',
-            'angle': 'Three-quarter angle with slight tilt for energy',
-            'focus': 'Character\'s moment of realization and the source of their discovery'
+            "composition": "Dynamic angle shot capturing moment of discovery",
+            "angle": "Three-quarter angle with slight tilt for energy",
+            "focus": "Character's moment of realization and the source of their discovery",
         },
         5: {
-            'composition': 'Medium shot showing character taking action',
-            'angle': 'Slightly low angle to emphasize empowerment',
-            'focus': 'Character\'s determined pose and the action they\'re taking'
+            "composition": "Medium shot showing character taking action",
+            "angle": "Slightly low angle to emphasize empowerment",
+            "focus": "Character's determined pose and the action they're taking",
         },
         6: {
-            'composition': 'Wide hopeful scene showing resolution and future',
-            'angle': 'Straight-on angle with uplifting perspective',
-            'focus': 'Character\'s transformed state and the hopeful environment around them'
-        }
+            "composition": "Wide hopeful scene showing resolution and future",
+            "angle": "Straight-on angle with uplifting perspective",
+            "focus": "Character's transformed state and the hopeful environment around them",
+        },
     }
-    
-    return framing_templates.get(panel_number, {
-        'composition': 'Balanced medium shot',
-        'angle': 'Eye-level angle',
-        'focus': 'Character and their immediate environment'
-    })
+
+    return framing_templates.get(
+        panel_number,
+        {
+            "composition": "Balanced medium shot",
+            "angle": "Eye-level angle",
+            "focus": "Character and their immediate environment",
+        },
+    )
+
 
 def get_anime_style_by_emotion(emotional_tone: str) -> str:
     """Map emotional tone to clean anime art styles without franchise references."""
@@ -409,62 +427,92 @@ def get_anime_style_by_emotion(emotional_tone: str) -> str:
         "happy": "bright and cheerful anime style with warm colors, expressive joyful expressions, and light-hearted atmosphere",
         "excited": "dynamic and energetic anime style with vibrant colors, bold line work, and enthusiastic character poses",
         "cheerful": "friendly and approachable anime style with bright colors, warm lighting, and optimistic character designs",
-
         # Calm/Peaceful emotions
         "contemplative": "soft and introspective anime style with gentle lighting, subtle expressions, and peaceful atmosphere",
         "peaceful": "serene and tranquil anime style with soft colors, calm compositions, and harmonious character designs",
         "calm": "elegant and composed anime style with clean line work, balanced compositions, and gentle character expressions",
-
         # Intense/Action emotions
         "determined": "focused and resolute anime style with strong character poses, dynamic angles, and determined expressions",
         "intense": "powerful and dramatic anime style with bold contrasts, intense expressions, and dynamic compositions",
         "focused": "sharp and attentive anime style with clear details, direct lighting, and concentrated character expressions",
-
         # Sad/Melancholic emotions
         "sad": "gentle and emotional anime style with soft lighting, touching expressions, and melancholic atmosphere",
         "melancholic": "subtle and bittersweet anime style with soft colors, gentle shadows, and reflective character designs",
         "nostalgic": "warm and reminiscent anime style with golden lighting, soft focus, and nostalgic atmosphere",
-
         # Creative/Artistic emotions
         "inspired": "creative and imaginative anime style with artistic lighting, expressive designs, and inspired character poses",
         "artistic": "detailed and craftsmanship-focused anime style with intricate designs, artistic compositions, and creative elements",
-
         # Playful/Fun emotions
         "playful": "fun and energetic anime style with lively expressions, dynamic poses, and playful character designs",
         "adventurous": "bold and adventurous anime style with dynamic compositions, expressive characters, and adventurous atmosphere",
-
         # Dark/Serious emotions
         "serious": "mature and thoughtful anime style with detailed character work, serious expressions, and composed atmosphere",
-        "mysterious": "enigmatic and atmospheric anime style with mysterious lighting, subtle shadows, and intriguing character designs"
+        "mysterious": "enigmatic and atmospheric anime style with mysterious lighting, subtle shadows, and intriguing character designs",
     }
 
-    return anime_styles.get(emotional_tone, "clean and expressive anime style with detailed characters, balanced compositions, and emotional depth")
+    return anime_styles.get(
+        emotional_tone,
+        "clean and expressive anime style with detailed characters, balanced compositions, and emotional depth",
+    )
+
 
 def get_manga_style_by_mood(mood: str, vibe: str) -> str:
     """Map user mood and vibe to clean manga art styles without franchise references."""
 
     manga_styles = {
         # Action/Adventure styles
-        ("frustrated", "adventure"): "intense action manga style with dramatic perspectives and dynamic fight scenes",
-        ("stressed", "motivational"): "dynamic battle manga style with determined character poses and energetic line work",
-        ("neutral", "adventure"): "heroic manga style with strong character designs and adventurous compositions",
-
+        (
+            "frustrated",
+            "adventure",
+        ): "intense action manga style with dramatic perspectives and dynamic fight scenes",
+        (
+            "stressed",
+            "motivational",
+        ): "dynamic battle manga style with determined character poses and energetic line work",
+        (
+            "neutral",
+            "adventure",
+        ): "heroic manga style with strong character designs and adventurous compositions",
         # Emotional/Calm styles
-        ("sad", "calm"): "emotional manga style with soft lighting, gentle expressions, and touching character moments",
-        ("happy", "calm"): "peaceful manga style with warm atmosphere, natural beauty, and gentle character designs",
-        ("neutral", "calm"): "elegant manga style with detailed character art, soft atmosphere, and balanced compositions",
-
+        (
+            "sad",
+            "calm",
+        ): "emotional manga style with soft lighting, gentle expressions, and touching character moments",
+        (
+            "happy",
+            "calm",
+        ): "peaceful manga style with warm atmosphere, natural beauty, and gentle character designs",
+        (
+            "neutral",
+            "calm",
+        ): "elegant manga style with detailed character art, soft atmosphere, and balanced compositions",
         # Intense/Dark styles
-        ("frustrated", "motivational"): "powerful battle manga style with intense expressions and dynamic action scenes",
-        ("stressed", "adventure"): "dark psychological thriller manga style with dramatic shadows and intense character focus",
-
+        (
+            "frustrated",
+            "motivational",
+        ): "powerful battle manga style with intense expressions and dynamic action scenes",
+        (
+            "stressed",
+            "adventure",
+        ): "dark psychological thriller manga style with dramatic shadows and intense character focus",
         # Musical/Creative styles
-        ("happy", "musical"): "music-themed manga style with emotional performance scenes and expressive character poses",
-        ("neutral", "musical"): "urban music manga style with dynamic compositions and lively character interactions",
-
+        (
+            "happy",
+            "musical",
+        ): "music-themed manga style with emotional performance scenes and expressive character poses",
+        (
+            "neutral",
+            "musical",
+        ): "urban music manga style with dynamic compositions and lively character interactions",
         # Motivational styles
-        ("sad", "motivational"): "inspirational underdog manga style with character growth and determined expressions",
-        ("happy", "motivational"): "motivational sports manga style with dynamic team interactions and energetic character designs",
+        (
+            "sad",
+            "motivational",
+        ): "inspirational underdog manga style with character growth and determined expressions",
+        (
+            "happy",
+            "motivational",
+        ): "motivational sports manga style with dynamic team interactions and energetic character designs",
     }
 
     # Get specific style or fallback to general mood mapping
@@ -478,54 +526,72 @@ def get_manga_style_by_mood(mood: str, vibe: str) -> str:
         "stressed": "intense manga style with determined expressions and dynamic character poses",
         "frustrated": "powerful manga style with strong expressions and dynamic action-oriented compositions",
         "sad": "emotional manga style with gentle lighting and touching character expressions",
-        "neutral": "balanced manga style with clear character designs and composed compositions"
+        "neutral": "balanced manga style with clear character designs and composed compositions",
     }
 
-    return mood_fallbacks.get(mood, "clean manga style with expressive characters and dynamic compositions")
+    return mood_fallbacks.get(
+        mood, "clean manga style with expressive characters and dynamic compositions"
+    )
+
 
 def generate_panel_prompt(panel_number: int, panel_data: Dict[str, Any]) -> str:
     """Generate a unique, panel-specific image prompt with automatic framing injection."""
     # Ensure panel number is set in the data
     panel_data_with_number = panel_data.copy()
-    panel_data_with_number['panel_number'] = panel_number
-    
+    panel_data_with_number["panel_number"] = panel_number
+
     # Generate the structured prompt with panel-specific framing
     prompt = create_structured_image_prompt(panel_data_with_number)
-    
+
     return prompt
+
 
 def create_image_prompt(panel_data: Dict[str, Any]) -> str:
     """Legacy function - redirects to structured prompt."""
     return create_structured_image_prompt(panel_data)
 
 
-def create_user_context(inputs: 'StoryInputs') -> str:
+def create_user_context(inputs: "StoryInputs") -> str:
     """Create standardized user context for LLM prompts."""
+    # Handle backward compatibility for optional fields
+    vibe = getattr(inputs, "vibe", None) or "adventure"
+    archetype = getattr(inputs, "archetype", None) or "hero"
+    dream = getattr(inputs, "dream", None) or inputs.desiredOutcome
+    hobby = getattr(inputs, "hobby", None) or inputs.secretWeapon
+    manga_title = getattr(inputs, "mangaTitle", None) or f"{inputs.nickname}'s Journey"
+
     context = f"""
 User Profile:
 - Name/Nickname: {inputs.nickname}
 - Age: {inputs.age}
 - Gender: {inputs.gender}
 - Current Mood: {inputs.mood}
-- Preferred Vibe: {inputs.vibe}
-- Personal Archetype: {inputs.archetype}
-- Dream/Goal: {inputs.dream}
-- Hobby/Interest: {inputs.hobby}
-- Story Title: {inputs.mangaTitle}
+- Preferred Vibe: {vibe}
+- Personal Archetype: {archetype}
+- Dream/Goal: {dream}
+- Hobby/Interest: {hobby}
+- Story Title: {manga_title}
 
-Additional Context:
-- Support System: {inputs.supportSystem or "Not specified"}
-- Core Value: {inputs.coreValue or "Not specified"}
-- Inner Struggle: {inputs.innerDemon or "Not specified"}
+Core Identity:
+- Support System: {inputs.supportSystem}
+- Core Value: {inputs.coreValue}
+- Past Resilience: {inputs.pastResilience}
+- Inner Struggle: {inputs.innerDemon}
+- Desired Outcome: {inputs.desiredOutcome}
+- Secret Weapon/Superpower: {inputs.secretWeapon}
 
 Story Requirements:
 - Create a 6-panel manga story that resonates with the user's emotional state
 - Transform {inputs.mood} feelings into an optimistic, growth-oriented journey
-- Incorporate {inputs.vibe} aesthetic and {inputs.archetype} character dynamics
-- Reference {inputs.hobby} and {inputs.dream} throughout the narrative
-- Ensure age-appropriate content for {inputs.age}-year-old
+- Incorporate {vibe} aesthetic and {archetype} character dynamics
+- Reference {hobby} and {dream} throughout the narrative
+- Use their {inputs.secretWeapon} as a key strength in overcoming {inputs.innerDemon}
+- Show how their {inputs.supportSystem} helps them achieve {inputs.desiredOutcome}
+- Build on their past success: {inputs.pastResilience}
+- Ensure age-appropriate content for {inputs.age} audience
 """
     return context.strip()
+
 
 def create_music_prompt(panel_data: Dict[str, Any], emotional_tone: str) -> str:
     """Create music generation prompt for panel emotional tone."""
@@ -534,8 +600,4 @@ def create_music_prompt(panel_data: Dict[str, Any], emotional_tone: str) -> str:
 
 def format_error_response(error: str, details: str = None) -> Dict[str, Any]:
     """Format error response for API."""
-    return {
-        "error": error,
-        "details": details,
-        "timestamp": create_timestamp()
-    }
+    return {"error": error, "details": details, "timestamp": create_timestamp()}

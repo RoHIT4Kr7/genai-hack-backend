@@ -1,24 +1,134 @@
 from datetime import datetime
 from typing import List, Literal, Dict, Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 import uuid
 
 
 class StoryInputs(BaseModel):
-    mood: Literal['happy', 'stressed', 'neutral', 'frustrated', 'sad']
-    vibe: Literal['calm', 'adventure', 'musical', 'motivational', 'slice-of-life', 'shonen', 'isekai', 'fantasy']
-    archetype: Literal['mentor', 'hero', 'companion', 'comedian']
-    dream: str = Field(..., min_length=1, max_length=500)
-    mangaTitle: str = Field(..., min_length=1, max_length=100)
-    nickname: str = Field(..., min_length=1, max_length=50)
-    hobby: str = Field(..., min_length=1, max_length=100)
-    age: int = Field(..., ge=10, le=35, description="User age for voice selection")
-    gender: Literal['male', 'female', 'non-binary', 'prefer-not-to-say']
-    
-    # Additional fields for enhanced story generation
-    supportSystem: str = Field(default="", description="Support system type")
-    coreValue: str = Field(default="", description="Core value/principle")
-    innerDemon: str = Field(default="", description="Inner struggle/demon")
+    # Core emotional and value-based inputs from new onboarding
+    mood: Literal["happy", "stressed", "neutral", "frustrated", "sad"]
+    coreValue: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="Core value/principle that guides the user",
+    )
+    supportSystem: str = Field(
+        ..., min_length=1, max_length=100, description="Support system type"
+    )
+    pastResilience: str = Field(
+        default="", max_length=500, description="Past challenge that was overcome"
+    )
+    innerDemon: str = Field(
+        default="", max_length=500, description="Main internal struggle"
+    )
+    desiredOutcome: str = Field(
+        default="",
+        max_length=500,
+        description="Desired outcome after overcoming the struggle",
+    )
+
+    # Character identity from new onboarding
+    nickname: str = Field(..., min_length=1, max_length=50, description="Hero's name")
+    secretWeapon: str = Field(
+        default="",
+        min_length=1,
+        max_length=100,
+        description="Secret superpower/strength",
+    )
+    age: str = Field(
+        ...,
+        min_length=1,
+        max_length=20,
+        description="Age range (teen, young-adult, adult, mature, senior, not-specified)",
+    )
+    gender: Literal["female", "male", "non-binary", "not-specified"]
+
+    # Legacy fields (keeping for backward compatibility but making optional)
+    vibe: Optional[
+        Literal[
+            "calm",
+            "adventure",
+            "musical",
+            "motivational",
+            "slice-of-life",
+            "shonen",
+            "isekai",
+            "fantasy",
+        ]
+    ] = None
+    archetype: Optional[Literal["mentor", "hero", "companion", "comedian"]] = None
+    dream: Optional[str] = None  # Mapped to pastResilience in new onboarding
+    mangaTitle: Optional[str] = None
+    hobby: Optional[str] = None  # Mapped to secretWeapon in new onboarding
+
+    @field_validator("pastResilience")
+    @classmethod
+    def validate_past_resilience(cls, v: str) -> str:
+        """Provide fallback for empty pastResilience."""
+        if not v or not v.strip():
+            return "I have overcome challenges before and learned from each experience, building my inner strength."
+        return v.strip()
+
+    @field_validator("innerDemon")
+    @classmethod
+    def validate_inner_demon(cls, v: str) -> str:
+        """Provide fallback for empty innerDemon."""
+        if not v or not v.strip():
+            return "Sometimes I struggle with self-doubt and uncertainty about my path forward."
+        return v.strip()
+
+    @field_validator("desiredOutcome")
+    @classmethod
+    def validate_desired_outcome(cls, v: str) -> str:
+        """Provide fallback for empty desiredOutcome."""
+        if not v or not v.strip():
+            return "I want to feel more confident and at peace with myself, knowing I can handle whatever comes my way."
+        return v.strip()
+
+    @field_validator("secretWeapon")
+    @classmethod
+    def validate_secret_weapon(cls, v: str) -> str:
+        """Provide fallback for empty secretWeapon."""
+        if not v or not v.strip():
+            return "inner strength and determination"
+        return v.strip()
+
+    @field_validator("age", mode="before")
+    @classmethod
+    def validate_age(cls, v) -> str:
+        """Convert age from number to string and map to age ranges."""
+        if isinstance(v, int):
+            # Map numeric age to age ranges
+            if v < 18:
+                return "teen"
+            elif v < 26:
+                return "young-adult"
+            elif v < 36:
+                return "adult"
+            elif v < 51:
+                return "mature"
+            else:
+                return "senior"
+        return str(v) if v else "young-adult"
+
+    @model_validator(mode="before")
+    @classmethod
+    def handle_legacy_fields(cls, values):
+        """Handle legacy field names from old frontend versions."""
+        if isinstance(values, dict):
+            # Map legacy field names to new ones
+            if "dream" in values and "pastResilience" not in values:
+                values["pastResilience"] = values.get("dream", "")
+
+            if "hobby" in values and "secretWeapon" not in values:
+                values["secretWeapon"] = values.get("hobby", "")
+
+            # Ensure required fields have defaults if missing
+            if "desiredOutcome" not in values:
+                values["desiredOutcome"] = ""
+
+        return values
 
 
 class CharacterSheet(BaseModel):
