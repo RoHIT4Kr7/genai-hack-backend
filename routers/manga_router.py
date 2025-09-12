@@ -12,10 +12,11 @@ from models.schemas import (
     HealthResponse,
 )
 from services.story_service import story_service
-from services.sequential_story_service import sequential_story_service
-from services.image_service import image_service
-from services.audio_service import audio_service
-from services.storage_service import storage_service
+
+# Removed sequential_story_service - using simplified nano-banana only
+from services.nano_banana_service import nano_banana_service
+
+from workflows.manga_workflow import MangaWorkflowManager
 from utils.helpers import create_timestamp, log_api_call
 from utils.socket_utils import emit_generation_progress
 
@@ -142,11 +143,11 @@ async def generate_manga_story_streaming(
             story_id = data.get("story_id", "")
             return await emit_generation_progress(story_id, event_type, data)
 
-        # Generate the complete story using sequential workflow for better reliability
-        story_data = await sequential_story_service.generate_sequential_story(
+        # Generate the complete story using nano-banana streaming workflow
+        story_data = await story_service.generate_streaming_story(
             inputs=request.inputs,
             emit_progress=emit_progress,
-            user_age=request.inputs.age,
+            user_age=22,  # Convert age range to int
             user_gender=request.inputs.gender,
         )
 
@@ -220,34 +221,16 @@ async def health_check() -> HealthResponse:
         except Exception as e:
             services_status["story_service"] = f"error - {str(e)}"
 
-        # Check Image service (Imagen)
+        # Check Nano-banana service (Image generation)
         try:
-            if image_service.model is not None:
-                services_status["image_service"] = "healthy"
+            if nano_banana_service.genai_client is not None:
+                services_status["nano_banana_service"] = "healthy"
             else:
-                services_status["image_service"] = "unhealthy - Imagen not initialized"
-        except Exception as e:
-            services_status["image_service"] = f"error - {str(e)}"
-
-        # Check Audio service (TTS only, Lyria removed)
-        try:
-            if audio_service.tts_client is not None:
-                services_status["audio_service"] = "healthy"
-            else:
-                services_status["audio_service"] = (
-                    "unhealthy - TTS client not initialized"
+                services_status["nano_banana_service"] = (
+                    "unhealthy - Nano-banana not initialized"
                 )
         except Exception as e:
-            services_status["audio_service"] = f"error - {str(e)}"
-
-        # Check Storage service (GCS)
-        try:
-            if storage_service.client is not None:
-                services_status["storage_service"] = "healthy"
-            else:
-                services_status["storage_service"] = "unhealthy - GCS not initialized"
-        except Exception as e:
-            services_status["storage_service"] = f"error - {str(e)}"
+            services_status["nano_banana_service"] = f"error - {str(e)}"
 
         # Determine overall health
         all_healthy = all("healthy" in status for status in services_status.values())
@@ -267,6 +250,78 @@ async def health_check() -> HealthResponse:
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
 
 
+@router.post("/generate-manga-nano-banana", response_model=StoryGenerationResponse)
+async def generate_manga_story_nano_banana(
+    request: StoryGenerationRequest,
+) -> StoryGenerationResponse:
+    """
+    Generate a complete 6-panel manga story using Nano-Banana + Chirp 3 HD LangGraph Workflow.
+
+    NANO-BANANA LANGGRAPH WORKFLOW FEATURES:
+    - Google AI Studio: nano-banana (Gemini 2.5 Flash Image Preview) for images (500 RPM)
+    - Existing Chirp 3 HD: TTS audio generation
+    - LangGraph workflow orchestration with your existing architecture
+    - Reference image bootstrapping for perfect character consistency
+    - Parallel panel generation (all 6 panels simultaneously)
+    - Clean integration with your workflow system
+    - ~1 minute total generation time
+
+    Pipeline:
+    1. Story planning with Mangaka-Sensei AI (existing)
+    2. Story validation (existing)
+    3. Reference image generation (nano-banana)
+    4. Panel generation with reference consistency (nano-banana)
+    5. Audio generation (existing Chirp 3 HD)
+    6. Final assembly (existing)
+
+    This integrates nano-banana into your existing LangGraph workflow architecture.
+    """
+    try:
+        logger.info(
+            f"🚀 Nano-banana LangGraph workflow request received for: {request.inputs.nickname}"
+        )
+        log_api_call("/generate-manga-nano-banana", request.dict())
+
+        # Validate inputs
+        if not request.inputs.nickname:
+            raise HTTPException(status_code=400, detail="Nickname is required")
+
+        # Create nano-banana workflow manager
+        workflow_manager = MangaWorkflowManager(use_nano_banana=True)
+
+        # Generate complete story using nano-banana LangGraph workflow
+        story = await workflow_manager.generate_story(request.inputs)
+
+        if not story or story.status != "completed":
+            raise HTTPException(
+                status_code=500,
+                detail="Nano-banana workflow generation failed or incomplete",
+            )
+
+        # Create response
+        manga_title = (
+            getattr(request.inputs, "mangaTitle", None)
+            or f"{request.inputs.nickname}'s Journey"
+        )
+
+        response = StoryGenerationResponse(
+            story_id=story.story_id,
+            status="completed",
+            message=f"Manga story '{manga_title}' generated successfully with Nano-Banana LangGraph Workflow!",
+            story=story,
+        )
+
+        logger.success(f"✅ Nano-banana LangGraph workflow completed: {story.story_id}")
+        return response
+
+    except Exception as e:
+        logger.error(f"❌ Nano-banana LangGraph workflow failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate manga story with nano-banana workflow: {str(e)}",
+        )
+
+
 @router.get("/test-simple")
 async def test_simple():
     """Ultra simple test endpoint."""
@@ -284,17 +339,20 @@ async def root():
         "endpoints": {
             "generate_manga": "/generate-manga",
             "generate_manga_streaming": "/generate-manga-streaming",
+            "generate_manga_nano_banana": "/generate-manga-nano-banana (RECOMMENDED)",
             "health": "/health",
             "story_status": "/story/{story_id}/status",
         },
         "features": [
-            "Mangaka-Sensei AI storytelling",
-            "Imagen 4.0 image generation",
-            "Personalized voice selection (age/gender)",
-            "Lyria-002 background music",
-            "Separate background music and TTS audio files",
+            "Mangaka-Sensei AI storytelling with Gemini 2.5 Flash",
+            "Nano-banana (Gemini 2.5 Flash Image Preview) - 500 RPM",
+            "Reference image generation for character consistency",
+            "GCS storage with calmira-backend bucket",
+            "Chirp 3 HD TTS with age/gender voice selection",
+            "Parallel panel generation",
+            "LangGraph workflow orchestration",
             "Streaming panel-by-panel generation",
             "Real-time progress updates via Socket.IO",
-            "Immediate asset generation per panel",
+            "~1 minute generation time",
         ],
     }

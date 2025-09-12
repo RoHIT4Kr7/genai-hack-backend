@@ -1,0 +1,241 @@
+"""
+Chirp 3 HD TTS service with age/gender-based voice selection.
+Mandatory feature for proper dialogue generation.
+"""
+
+import asyncio
+from typing import List, Dict, Any, Tuple
+from loguru import logger
+from google.cloud import texttospeech
+from config.settings import settings
+
+
+class Chirp3HDTTSService:
+    """Chirp 3 HD TTS service with personalized voice selection."""
+
+    def __init__(self):
+        self.client = texttospeech.TextToSpeechClient()
+        self.bucket_name = settings.gcs_bucket_name  # calmira-backend
+        logger.info("✅ Chirp 3 HD TTS service initialized")
+
+    def _select_voice(self, user_age: int, user_gender: str) -> Dict[str, str]:
+        """Select appropriate voice based on user age and gender."""
+        try:
+            # Age-based voice selection with Chirp 3 HD voices
+            if user_age <= 18:
+                # Teen voices
+                if user_gender.lower() in ["female", "woman", "girl"]:
+                    voice_name = "en-US-Journey-F"  # Young female voice
+                elif user_gender.lower() in ["male", "man", "boy"]:
+                    voice_name = "en-US-Journey-D"  # Young male voice
+                else:
+                    voice_name = "en-US-Journey-F"  # Default to female for non-binary
+            elif user_age <= 30:
+                # Young adult voices
+                if user_gender.lower() in ["female", "woman", "girl"]:
+                    voice_name = "en-US-Journey-F"
+                elif user_gender.lower() in ["male", "man", "boy"]:
+                    voice_name = "en-US-Journey-D"
+                else:
+                    voice_name = "en-US-Journey-O"  # Neutral voice
+            else:
+                # Adult voices
+                if user_gender.lower() in ["female", "woman", "girl"]:
+                    voice_name = "en-US-Studio-O"  # Mature female voice
+                elif user_gender.lower() in ["male", "man", "boy"]:
+                    voice_name = "en-US-Studio-M"  # Mature male voice
+                else:
+                    voice_name = "en-US-Studio-O"  # Default to neutral
+
+            voice_config = {
+                "language_code": "en-US",
+                "name": voice_name,
+                "ssml_gender": texttospeech.SsmlVoiceGender.NEUTRAL,
+            }
+
+            logger.info(
+                f"Selected Chirp 3 HD voice for age {user_age}, gender {user_gender}: {voice_name}"
+            )
+            return voice_config
+
+        except Exception as e:
+            logger.error(f"Voice selection failed: {e}")
+            # Fallback to default voice
+            return {
+                "language_code": "en-US",
+                "name": "en-US-Journey-F",
+                "ssml_gender": texttospeech.SsmlVoiceGender.NEUTRAL,
+            }
+
+    def _clean_text_for_tts(self, text: str) -> str:
+        """Clean text for better TTS pronunciation and 8-10 second duration."""
+        import re
+        
+        # Remove quotes and special characters that don't help with narration
+        text = text.strip('"\'')
+        
+        # Remove action descriptions in brackets/parentheses
+        text = re.sub(r'\[.*?\]', '', text)
+        text = re.sub(r'\(.*?\)', '', text)
+        
+        # Replace em dashes and special punctuation with natural pauses
+        text = text.replace('—', ', ')
+        text = text.replace('–', ', ')
+        text = text.replace('...', '. ')
+        text = text.replace('..', '. ')
+        
+        # Clean up multiple spaces and normalize punctuation
+        text = re.sub(r'\s+', ' ', text)
+        text = text.replace(' ,', ',').replace(' .', '.')
+        
+        # Ensure proper sentence ending for natural speech
+        text = text.strip()
+        if text and not text.endswith(('.', '!', '?')):
+            text += '.'
+            
+        # Limit length for 8-10 second duration (approximately 25-35 words)
+        words = text.split()
+        if len(words) > 35:
+            # Take first 35 words and ensure it ends properly
+            text = ' '.join(words[:35])
+            if not text.endswith(('.', '!', '?')):
+                text += '.'
+        
+        return text
+
+    async def generate_tts_audio(
+        self,
+        text: str,
+        story_id: str,
+        panel_number: int,
+        user_age: int,
+        user_gender: str,
+    ) -> str:
+        """Generate TTS audio for a panel using Chirp 3 HD."""
+        try:
+            if not text or not text.strip():
+                logger.warning(f"Empty text for panel {panel_number}, skipping TTS")
+                return ""
+
+            # Clean text for better TTS and proper duration
+            cleaned_text = self._clean_text_for_tts(text)
+            logger.info(f"Panel {panel_number} TTS text: '{cleaned_text}'")
+
+            # Select appropriate voice
+            voice_config = self._select_voice(user_age, user_gender)
+
+            # Create voice selection
+            voice = texttospeech.VoiceSelectionParams(
+                language_code=voice_config["language_code"],
+                name=voice_config["name"],
+                ssml_gender=voice_config["ssml_gender"],
+            )
+
+            # Create synthesis input with cleaned text
+            synthesis_input = texttospeech.SynthesisInput(text=cleaned_text)
+
+            # Create audio config for high quality Chirp 3 HD with optimal timing
+            audio_config = texttospeech.AudioConfig(
+                audio_encoding=texttospeech.AudioEncoding.MP3,
+                speaking_rate=0.8,  # Slower rate for 8-10 second duration
+                pitch=0.0,
+                volume_gain_db=2.0,  # Slightly louder for better clarity
+                sample_rate_hertz=24000,  # High quality
+            )
+
+            # Generate speech
+            logger.info(
+                f"Generating Chirp 3 HD TTS for panel {panel_number} with voice {voice_config['name']}"
+            )
+            response = await asyncio.to_thread(
+                self.client.synthesize_speech,
+                input=synthesis_input,
+                voice=voice,
+                audio_config=audio_config,
+            )
+
+            # Upload to GCS (using nano-banana service's GCS client)
+            from services.nano_banana_service import nano_banana_service
+
+            audio_path = f"stories/{story_id}/tts_{panel_number:02d}.mp3"
+            audio_url = await nano_banana_service._upload_to_gcs(
+                response.audio_content, audio_path
+            )
+
+            logger.info(
+                f"Chirp 3 HD TTS generated for panel {panel_number}: {audio_url}"
+            )
+            
+            # Emit real-time audio completion update
+            try:
+                from utils.socket_utils import emit_generation_progress
+                await emit_generation_progress(
+                    story_id=story_id,
+                    event_type="panel_audio_ready",
+                    data={
+                        "story_id": story_id,
+                        "panel_number": panel_number,
+                        "audio_url": audio_url,
+                        "status": "audio_complete"
+                    }
+                )
+                logger.info(f"📡 Emitted panel_audio_ready for panel {panel_number}")
+            except Exception as socket_error:
+                logger.warning(f"Failed to emit audio update: {socket_error}")
+            
+            return audio_url
+
+        except Exception as e:
+            logger.error(
+                f"Failed to generate Chirp 3 HD TTS for panel {panel_number}: {e}"
+            )
+            return ""
+
+    async def generate_all_audio(
+        self,
+        panels: List[Dict[str, Any]],
+        story_id: str,
+        user_age: int,
+        user_gender: str,
+    ) -> Tuple[List[str], List[str]]:
+        """Generate all audio for panels."""
+        try:
+            # Generate TTS for all panels in parallel
+            tts_tasks = []
+            for i, panel in enumerate(panels):
+                dialogue_text = panel.get("dialogue_text", "")
+                task = self.generate_tts_audio(
+                    dialogue_text, story_id, i + 1, user_age, user_gender
+                )
+                tts_tasks.append(task)
+
+            # Execute all TTS generation in parallel
+            tts_urls = await asyncio.gather(*tts_tasks, return_exceptions=True)
+
+            # Process results and handle exceptions
+            processed_tts_urls = []
+            for i, result in enumerate(tts_urls):
+                if isinstance(result, Exception):
+                    logger.error(f"TTS generation failed for panel {i+1}: {result}")
+                    processed_tts_urls.append("")
+                else:
+                    processed_tts_urls.append(result)
+
+            # Generate background music URLs (static for now)
+            background_urls = []
+            for i in range(len(panels)):
+                bg_url = f"https://storage.googleapis.com/{self.bucket_name}/stories/{story_id}/bg_{i+1:02d}.mp3"
+                background_urls.append(bg_url)
+
+            logger.info(
+                f"Generated {len(processed_tts_urls)} Chirp 3 HD TTS files and {len(background_urls)} background URLs"
+            )
+            return background_urls, processed_tts_urls
+
+        except Exception as e:
+            logger.error(f"Failed to generate all audio: {e}")
+            return [], []
+
+
+# Global Chirp 3 HD TTS service instance
+chirp3hd_tts_service = Chirp3HDTTSService()

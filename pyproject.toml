@@ -1,68 +1,47 @@
 [project]
 name = "manga-wellness-backend"
 version = "0.1.0"
-description = "Mental wellness platform that generates personalized 6-panel manga stories"
-authors = [
-    {name = "Manga Wellness Team", email = "team@manga-wellness.com"},
-]
+description = "Manga wellness backend with nano-banana and GCS"
+requires-python = ">=3.12"
 dependencies = [
+    # Core FastAPI dependencies
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
-    "pydantic>=2.5.0",
+    "python-multipart>=0.0.6",
+    # Google AI/Gemini dependencies
+    "google-generativeai>=0.3.0",
+    "langchain-google-genai>=2.0.0",
+    # LangChain
     "langchain>=0.1.0",
-    "langgraph>=0.0.20",
+    "langchain-core>=0.1.0",
+    # Google Cloud services (mandatory)
     "google-cloud-storage>=2.10.0",
+    "google-cloud-texttospeech>=2.27.0",
+    # Other dependencies
+    "pydantic>=2.5.0",
+    "pillow>=10.0.0",
+    "loguru>=0.7.2",
+    "python-dotenv>=1.0.0",
+    "aiofiles>=23.2.1",
+    "httpx>=0.25.0",
+    "python-socketio>=5.10.0",
     "google-cloud-aiplatform>=1.38.0",
     "google-auth>=2.23.0",
-    "streamlit>=1.28.0",
-    "python-multipart>=0.0.6",
-    "aiofiles>=23.2.0",
-    "python-dotenv>=1.0.0",
-    "httpx>=0.25.0",
-    "pillow>=10.1.0",
-
-    "asyncio-mqtt>=0.16.0",
-    "loguru>=0.7.2",
-    "pydantic-settings>=2.1.0",
     "langchain-google-vertexai>=2.0.0",
-    "google-genai>=1.0.0",
-    "google-cloud-texttospeech>=2.27.0",
+    "pydantic-settings>=2.1.0",
+    "langgraph>=0.6.7",
 ]
-requires-python = ">=3.11"
-readme = "README.md"
-license = {text = "MIT"}
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.4.0",
-    "pytest-asyncio>=0.21.0",
-    "black>=23.0.0",
-    "isort>=5.12.0",
-    "flake8>=6.0.0",
+[tool.hatch.build.targets.wheel]
+packages = [
+    "services",
+    "routers", 
+    "config",
+    "models",
+    "utils",
+    "workflows"
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.black]
-line-length = 88
-target-version = ['py311']
-
-[tool.isort]
-profile = "black"
-line_length = 88
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
-
-[tool.hatch.build.targets.wheel]
-packages = [
-    "config",
-    "models",
-    "routers",
-    "services",
-    "utils",
-    "workflows",
-]

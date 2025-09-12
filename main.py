@@ -148,15 +148,14 @@ async def lifespan(app: FastAPI):
 
     # Initialize services
     try:
-        from services.storage_service import storage_service
+        from services.nano_banana_service import nano_banana_service
         from services.story_service import story_service
-        from services.image_service import image_service
-        from services.audio_service import audio_service
+        from services.chirp3hd_tts_service import (
+            chirp3hd_tts_service as audio_service,
+        )
 
-        # Test service connections
-        storage_healthy = await storage_service.check_bucket_access()
-        if not storage_healthy:
-            logger.warning("Storage service connection failed")
+        # Test service connections (nano-banana service has GCS built-in)
+        logger.info("Nano-banana service with GCS and Chirp 3 HD initialized")
 
         logger.info("All services initialized successfully")
 

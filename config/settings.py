@@ -1,8 +1,34 @@
+import os
+from pathlib import Path
+
+
+# Load environment variables from .env file
+def load_env_file():
+    """Load environment variables from .env file."""
+    env_path = Path(__file__).parent.parent / ".env"
+    if env_path.exists():
+        with open(env_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    # Remove quotes if present
+                    value = value.strip().strip('"').strip("'")
+                    os.environ[key] = value
+
+
+# Load .env file
+load_env_file()
+
+
 class Settings:
     def __init__(self):
         # Hardcoded Vertex AI Configuration - SDK uses GOOGLE_APPLICATION_CREDENTIALS env var automatically
         self.vertex_ai_project_id = "n8n-local-463912"
         self.model_name = "gemini-2.5-flash"
+
+        # Gemini API Configuration
+        self.gemini_api_key = os.getenv("GEMINI_API_KEY", "")
 
         # Hardcoded Storage Settings
         self.gcs_bucket_name = "calmira-backend"

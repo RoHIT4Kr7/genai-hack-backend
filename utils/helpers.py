@@ -66,10 +66,10 @@ PROP_SHEET:
 
 STYLE_GUIDE:
 {{
-  "art_style": "Art style that matches user's preferred anime genre and emotional tone",
-  "color_palette": "Colors that reflect emotional journey from user's current mood to hope",
-  "panel_layout": "Panel layout that supports story flow and emotional progression",
-  "visual_elements": ["user's archetype characteristics", "their hobby/interest motifs", "symbols of growth"]
+  "art_style": "Professional anime illustration style with vibrant cel-shading, expressive character animation, and detailed background art. Think high-quality anime production with emotional depth - combining the atmospheric beauty of Studio Ghibli with the dynamic energy of modern anime. The character design must be completely original and unique.",
+  "color_palette": "Dynamic anime color grading that evolves with the emotional journey: Panels 1-2 use muted, contemplative tones (soft blues, grays, pastels), Panels 3-4 transition to warmer colors (gentle oranges, soft yellows), Panels 5-6 burst with vibrant, hopeful colors (bright blues, energetic oranges, triumphant golds) with anime-style lighting effects.",
+  "panel_layout": "Cinematic anime scenes in square 1:1 format - each panel is a complete anime illustration with professional composition, not traditional manga panels. Use anime directing techniques like dynamic camera angles, dramatic lighting, and atmospheric effects.",
+  "visual_elements": ["anime-style particle effects (sparkles, light orbs, energy aura)", "environmental anime effects (wind through hair, floating petals, gentle mist)", "anime lighting techniques (rim lighting, god rays, soft shadows)", "symbolic elements from user's life rendered in anime aesthetic", "anime-specific atmospheric details (lens flares, bokeh effects, soft focus backgrounds)"]
 }}
 
 PANEL_1:
@@ -97,20 +97,22 @@ CRITICAL CONSISTENCY REQUIREMENTS:
 - Ensure the character's emotional journey progresses logically from panel to panel
 - Make each panel's content directly relevant to the user's specific inputs and challenges
 
-IMPORTANT TTS GUIDELINES:
-- Write dialogue_text content that flows naturally when spoken aloud
+IMPORTANT TTS GUIDELINES FOR 8-10 SECOND VOICE CONTENT:
+- Write dialogue_text content that flows naturally when spoken aloud as pure narration
 - Do NOT include "Panel 1:", "Panel 2:", etc. at the beginning
-- Do NOT use dashes (-), asterisks (*), or special formatting
-- Do NOT include stage directions like [character does something]
-- Write in natural, conversational language that sounds good when read by text-to-speech
-- Keep sentences clear and well-paced for audio narration
+- Do NOT use quotes ("), dashes (-), asterisks (*), or special formatting symbols
+- Do NOT include stage directions like [character does something] or (character action)
+- Do NOT use ellipses (...) or em dashes (—) - replace with natural pauses using commas
+- Write in natural, conversational language that sounds perfect for text-to-speech
+- Keep sentences clear and well-paced for smooth audio narration
 - Use proper punctuation (periods, commas) for natural speech rhythm
-- Each panel should be 60-100 words for optimal audio length (10-15 seconds of narration)
-- Include emotional depth and character introspection that feels authentic to the user's experience
-- Make each panel's narration feel like a complete thought or moment
-- Use descriptive language that enhances the visual storytelling
-- Include character's internal thoughts and feelings that reflect the user's real emotions
-- Create a natural flow between panels while making each panel's audio self-contained
+- Each panel should be 25-35 words for optimal 8-10 second audio duration
+- Focus on character's internal voice and emotional journey without narrative descriptions
+- Make each panel's voice content feel like the character speaking directly to the listener
+- Use simple, clear language that conveys deep emotional meaning
+- Include character's genuine thoughts and feelings that reflect the user's real experience
+- Create smooth emotional progression between panels while making each self-contained
+- End sentences naturally without trailing punctuation or incomplete thoughts
 
 Remember: Every story should end with hope, growth, and the message that challenges make us stronger. Focus on emotional resilience and the power of self-discovery while staying true to the user's personal journey and inputs.
 """
@@ -206,7 +208,7 @@ def validate_story_consistency(panels: List[Dict[str, Any]]) -> bool:
 
 
 def create_structured_image_prompt(panel_data: Dict[str, Any]) -> str:
-    """Create detailed, story-focused image generation prompt with character consistency and meaningful narrative elements."""
+    """Create a detailed, anime-focused image prompt with original character design protection."""
     character = panel_data.get("character_sheet", {})
     props = panel_data.get("prop_sheet", {})
     style = panel_data.get("style_guide", {})
@@ -216,73 +218,72 @@ def create_structured_image_prompt(panel_data: Dict[str, Any]) -> str:
 
     # Extract CHARACTER_SHEET details for consistency
     char_name = character.get("name", "Character")
-    char_age = character.get("age", "young adult")
     char_appearance = character.get(
         "appearance", "anime character with expressive eyes"
     )
+    char_age = character.get("age", "young adult")
     char_personality = character.get("personality", "determined and hopeful")
-    char_goals = character.get("goals", "pursuing personal growth")
-    char_fears = character.get("fears", "facing challenges")
-    char_strengths = character.get("strengths", "resilience and hope")
 
     # Extract PROP_SHEET details
     items = props.get("items", ["symbolic item"])
-    main_item = items[0] if items else "symbolic item"
     environment = props.get("environment", "meaningful setting that supports the story")
     lighting = props.get("lighting", "dramatic lighting that conveys emotion")
     mood_elements = props.get(
         "mood_elements", ["elements that enhance emotional atmosphere"]
     )
 
-    # Extract STYLE_GUIDE details
-    art_style = style.get("art_style", "clean manga style with emotional depth")
-    color_palette = style.get("color_palette", "colors that reflect emotional journey")
-    visual_elements = style.get(
-        "visual_elements", ["meaningful visual storytelling elements"]
-    )
-
-    # Get clean anime style based on emotional tone (no franchise references)
-    anime_style = get_anime_style_by_emotion(emotional_tone)
-
-    # Extract emotional cues from dialogue text
-    emotional_cues = _extract_emotional_cues_from_dialogue(
-        dialogue_text, emotional_tone
-    )
+    # Get anime style with detailed visual effects
+    user_mood = panel_data.get("user_mood", "neutral")
+    user_vibe = panel_data.get("user_vibe", "calm")
+    anime_aesthetic = get_anime_style_by_mood(user_mood, user_vibe)
 
     # Get panel-specific framing
     panel_framing = _get_panel_specific_framing(panel_number, emotional_tone)
 
-    # Create narrative-driven prompt that tells a meaningful story
-    prompt = f"""{anime_style}. Professional manga illustration in square 1:1 format.
+    # Create anime-specific environmental effects
+    anime_effects = _get_anime_environmental_effects(emotional_tone, user_mood)
 
-MAIN CHARACTER - CONSISTENT DESIGN:
-{char_name}, {char_age} - {char_appearance}. {char_name} is {char_personality}, with goals of {char_goals}.
-Currently showing {emotional_cues['expression']} expression that conveys {emotional_tone} emotion.
+    # ENHANCED ANIME-FOCUSED PROMPT TEMPLATE
+    prompt = f"""ANIME SCENE: High-quality anime illustration with professional cel-shading and vibrant colors.
 
-STORY CONTEXT FOR PANEL {panel_number}:
-{char_name} is in {environment}, actively engaged with {main_item}. The scene captures a meaningful moment where {char_name} confronts {char_fears} while drawing on their {char_strengths}.
+**VISUAL STYLE & ATMOSPHERE:**
+{anime_aesthetic}
 
-ENVIRONMENTAL DETAILS:
-{environment} with {', '.join(mood_elements)}. {lighting} creates {emotional_cues['lighting']} atmosphere that supports the emotional journey.
+**ORIGINAL CHARACTER (NO EXISTING ANIME RESEMBLANCE):**
+- **Identity:** An original anime character named {char_name}, {char_age}, with {char_personality} personality
+- **Unique Design:** {char_appearance} - MUST be completely original design, not resembling any existing anime characters
+- **Expression:** Showing {emotional_tone} emotion through authentic anime facial expressions and body language
+- **Narrative Context:** {dialogue_text}
 
-CHARACTER INTERACTION:
-{char_name} is meaningfully interacting with their environment - {'standing confidently' if emotional_tone in ['determined', 'inspired', 'hopeful'] else 'contemplating deeply' if emotional_tone in ['contemplative', 'peaceful'] else 'facing their challenge'}. Every element in the scene relates to {char_name}'s personal growth journey.
+**ANIME SCENE COMPOSITION:**
+- **Camera Work:** {panel_framing['composition']} with {panel_framing['angle']} - cinematic anime directing style
+- **Focus Point:** {panel_framing['focus']} with dramatic anime emphasis techniques
+- **Environment:** {environment} rendered in detailed anime background art style
+- **Symbolic Elements:** {', '.join(mood_elements)} integrated naturally into the anime scene
 
-VISUAL COMPOSITION:
-{panel_framing['composition']} from {panel_framing['angle']}, focusing on {panel_framing['focus']}.
-{art_style} with {color_palette} palette. Key visual elements: {', '.join(visual_elements)}.
+**ANIME VISUAL EFFECTS:**
+{anime_effects}
 
-TECHNICAL REQUIREMENTS:
-- High-quality Imagen 4.0-ultra-generate-001 optimized rendering
-- Extremely detailed character design with consistent features
-- Clean line art with professional manga finish
-- No text, captions, or speech bubbles
-- Full character visible with meaningful environmental context
-- Square 1:1 aspect ratio with story-driven composition
-- Professional lighting and color grading
-- Focus on narrative meaning over decorative effects"""
+**LIGHTING & COLOR:**
+- **Lighting Style:** {lighting} with anime-specific rim lighting and soft shadows
+- **Color Grading:** Vibrant anime color palette with proper saturation and contrast
+- **Atmospheric Effects:** Soft particles, gentle wind effects, and anime-style environmental details
 
-    return prompt.strip()
+**TECHNICAL SPECIFICATIONS:**
+- **Art Style:** Professional anime illustration with clean line art and cel-shading
+- **Quality:** High-definition anime artwork suitable for animation production
+- **Format:** Square 1:1 aspect ratio anime panel
+- **Character Consistency:** Maintain exact same character design as established in reference
+
+**CRITICAL RESTRICTIONS:**
+- NO text, speech bubbles, logos, or watermarks
+- Character MUST be 100% original - absolutely NO resemblance to Naruto, Luffy, Goku, Ichigo, or ANY existing anime characters
+- Focus on ANIME AESTHETIC and VISUAL STYLE without copying character designs
+- Use anime themes and atmosphere while keeping character completely unique
+
+Panel {panel_number} of 6: This anime scene represents a key moment in {char_name}'s emotional journey toward hope and resilience.""".strip()
+
+    return prompt
 
 
 def _extract_emotional_cues_from_dialogue(
@@ -418,6 +419,81 @@ def _get_panel_specific_framing(
     )
 
 
+def _get_anime_environmental_effects(emotional_tone: str, mood: str) -> str:
+    """Generate anime-specific environmental effects based on emotion and mood."""
+
+    effect_combinations = {
+        # Happy emotions
+        (
+            "happy",
+            "cheerful",
+        ): "Floating cherry blossom petals, warm sunbeams with lens flares, gentle sparkle particles, and soft wind effects moving through hair and clothing",
+        (
+            "happy",
+            "excited",
+        ): "Dynamic speed lines, energy sparkles radiating outward, bright particle bursts, and that triumphant anime glow effect",
+        # Determined/Motivated emotions
+        (
+            "determined",
+            "stressed",
+        ): "Intense aura effects with energy waves, dramatic wind whipping around character, power-up particle effects, and strong rim lighting",
+        (
+            "determined",
+            "frustrated",
+        ): "Crackling energy effects, sharp light rays cutting through darkness, swirling power aura, and dynamic motion blur",
+        # Calm/Peaceful emotions
+        (
+            "contemplative",
+            "sad",
+        ): "Gentle floating light orbs, soft mist effects, delicate rain droplets, and ethereal god rays breaking through clouds",
+        (
+            "peaceful",
+            "neutral",
+        ): "Subtle wind effects, soft particle drift, natural lighting with gentle shadows, and calm atmospheric haze",
+        # Sad/Melancholic emotions
+        (
+            "sad",
+            "melancholic",
+        ): "Soft rain effects with water droplets on surfaces, muted lighting with gentle shadows, and delicate light particles floating upward",
+        (
+            "nostalgic",
+            "contemplative",
+        ): "Golden hour lighting with warm particle effects, soft focus background blur, and gentle memory-like sparkles",
+        # Intense/Action emotions
+        (
+            "intense",
+            "focused",
+        ): "Sharp contrast lighting, dramatic shadow effects, concentrated energy particles, and powerful atmospheric pressure lines",
+        (
+            "adventurous",
+            "excited",
+        ): "Dynamic wind effects, swirling leaves or debris, adventure sparkles, and that epic journey atmosphere",
+    }
+
+    # Try to find specific combination
+    effect_key = (emotional_tone, mood)
+    if effect_key in effect_combinations:
+        return effect_combinations[effect_key]
+
+    # Fallback based on emotional tone only
+    tone_fallbacks = {
+        "happy": "Bright sparkle effects, warm particle glow, gentle wind through hair, and cheerful atmospheric lighting",
+        "determined": "Powerful aura effects, energy particles, dramatic wind, and intense lighting with strong shadows",
+        "sad": "Soft rain or mist effects, gentle light particles, muted atmospheric glow, and delicate environmental details",
+        "contemplative": "Subtle floating particles, soft lighting effects, gentle atmospheric haze, and peaceful environmental elements",
+        "excited": "Dynamic particle bursts, energetic sparkles, motion effects, and vibrant atmospheric energy",
+        "peaceful": "Calm wind effects, soft particle drift, natural lighting, and serene environmental atmosphere",
+        "intense": "Dramatic lighting effects, powerful energy aura, sharp shadows, and intense atmospheric pressure",
+        "hopeful": "Uplifting light rays, gentle sparkles rising upward, warm atmospheric glow, and optimistic particle effects",
+        "uplifting": "Triumphant light effects, celebratory sparkles, bright atmospheric glow, and joyful particle animation",
+    }
+
+    return tone_fallbacks.get(
+        emotional_tone,
+        "Gentle anime particle effects, soft atmospheric lighting, subtle wind elements, and natural environmental details",
+    )
+
+
 def get_anime_style_by_emotion(emotional_tone: str) -> str:
     """Map emotional tone to clean anime art styles without franchise references."""
 
@@ -456,81 +532,86 @@ def get_anime_style_by_emotion(emotional_tone: str) -> str:
     )
 
 
-def get_manga_style_by_mood(mood: str, vibe: str) -> str:
-    """Map user mood and vibe to clean manga art styles without franchise references."""
+def get_anime_style_by_mood(mood: str, vibe: str) -> str:
+    """Map user mood and vibe to specific anime visual styles with detailed aesthetic descriptions."""
 
-    manga_styles = {
-        # Action/Adventure styles
-        (
-            "frustrated",
-            "adventure",
-        ): "intense action manga style with dramatic perspectives and dynamic fight scenes",
-        (
-            "stressed",
-            "motivational",
-        ): "dynamic battle manga style with determined character poses and energetic line work",
-        (
-            "neutral",
-            "adventure",
-        ): "heroic manga style with strong character designs and adventurous compositions",
-        # Emotional/Calm styles
-        (
-            "sad",
-            "calm",
-        ): "emotional manga style with soft lighting, gentle expressions, and touching character moments",
+    # ENHANCED: Detailed anime style mappings with specific visual elements
+    anime_styles = {
+        # Hopeful & Happy - Slice of Life Aesthetics
         (
             "happy",
             "calm",
-        ): "peaceful manga style with warm atmosphere, natural beauty, and gentle character designs",
+        ): "Slice-of-life anime aesthetic with cherry blossom petals floating in warm sunlight, soft cel-shading, pastel color grading, gentle wind effects, and that peaceful afternoon glow typical of healing anime. Think cozy coffee shop scenes with warm golden hour lighting.",
         (
-            "neutral",
-            "calm",
-        ): "elegant manga style with detailed character art, soft atmosphere, and balanced compositions",
-        # Intense/Dark styles
-        (
-            "frustrated",
-            "motivational",
-        ): "powerful battle manga style with intense expressions and dynamic action scenes",
-        (
-            "stressed",
+            "happy",
             "adventure",
-        ): "dark psychological thriller manga style with dramatic shadows and intense character focus",
-        # Musical/Creative styles
+        ): "Adventure anime style with vibrant sky blues and sunset oranges, dynamic wind-swept hair, sparkling effects in the air, energetic pose lines, and that triumphant hero lighting with lens flares and particle effects dancing around the character.",
         (
             "happy",
             "musical",
-        ): "music-themed manga style with emotional performance scenes and expressive character poses",
+        ): "Music anime aesthetic with floating musical notes as light particles, rainbow color gradients, dreamy bokeh effects, stage lighting with colorful spotlights, and that magical performance glow with shimmering background elements.",
+        # Stressed & Frustrated - Shonen Battle Aesthetics
         (
-            "neutral",
-            "musical",
-        ): "urban music manga style with dynamic compositions and lively character interactions",
-        # Motivational styles
+            "stressed",
+            "motivational",
+        ): "Shonen anime battle style with intense orange and red color palette, dramatic speed lines, powerful aura effects radiating from the character, high contrast shadows, and that determined warrior lighting with energy crackling in the background.",
+        (
+            "frustrated",
+            "adventure",
+        ): "Dark shonen aesthetic with stormy skies, lightning effects, sharp angular shadows, intense blue and purple color grading, rain droplets, and that epic confrontation atmosphere with wind whipping through the scene.",
+        # Sad & Reflective - Emotional Drama Aesthetics
+        (
+            "sad",
+            "calm",
+        ): "Emotional drama anime style with soft rain effects, muted blue and gray tones, gentle god rays breaking through clouds, watercolor-like background blur, and that melancholic beauty typical of touching anime moments with subtle light particles.",
         (
             "sad",
             "motivational",
-        ): "inspirational underdog manga style with character growth and determined expressions",
+        ): "Inspirational anime aesthetic with a single beam of golden light cutting through darkness, warm amber highlights on the character's face, soft glowing particles rising upward, and that hopeful breakthrough lighting effect.",
+        # Neutral & Contemplative - Modern Anime Aesthetics
+        (
+            "neutral",
+            "calm",
+        ): "Modern anime style with clean architectural backgrounds, soft natural lighting, realistic shadows, balanced color temperature, and that contemporary urban anime aesthetic with subtle depth of field effects.",
+        (
+            "neutral",
+            "adventure",
+        ): "Fantasy anime aesthetic with magical floating particles, ethereal blue and purple lighting, mystical fog effects, enchanted forest atmosphere, and that otherworldly glow with sparkles and light orbs.",
+        (
+            "neutral",
+            "musical",
+        ): "Rhythmic anime style with flowing fabric effects, harmonious color transitions, gentle light waves, and that melodic visual flow with soft particle trails following the character's movements.",
+        # Additional combinations for richer variety
         (
             "happy",
             "motivational",
-        ): "motivational sports manga style with dynamic team interactions and energetic character designs",
+        ): "Uplifting shonen style with bright yellow and orange energy aura, triumphant pose effects, victory sparkles, and that champion's glow with radiant background lighting.",
+        (
+            "stressed",
+            "calm",
+        ): "Contemplative anime aesthetic with soft blue moonlight, gentle shadow play, peaceful night atmosphere, and that quiet strength lighting with subtle rim lighting effects.",
+        (
+            "frustrated",
+            "motivational",
+        ): "Intense transformation anime style with explosive energy effects, dramatic color shifts from dark to bright, power-up aura, and that breakthrough moment lighting with dynamic particle bursts.",
     }
 
-    # Get specific style or fallback to general mood mapping
     style_key = (mood, vibe)
-    if style_key in manga_styles:
-        return manga_styles[style_key]
+    if style_key in anime_styles:
+        return anime_styles[style_key]
 
-    # Fallback by mood only - clean descriptions without franchise references
+    # Enhanced fallback descriptions with specific anime visual elements
     mood_fallbacks = {
-        "happy": "warm and joyful manga style with bright atmosphere and expressive character designs",
-        "stressed": "intense manga style with determined expressions and dynamic character poses",
-        "frustrated": "powerful manga style with strong expressions and dynamic action-oriented compositions",
-        "sad": "emotional manga style with gentle lighting and touching character expressions",
-        "neutral": "balanced manga style with clear character designs and composed compositions",
+        "happy": "Bright anime aesthetic with warm golden lighting, cheerful color palette of yellows and pinks, gentle sparkle effects, and that joyful anime glow with soft particle effects.",
+        "stressed": "Intense anime style with dramatic red and orange lighting, powerful energy effects, determined expression lines, and that focused warrior atmosphere with dynamic background elements.",
+        "frustrated": "Dynamic anime aesthetic with stormy color grading, sharp contrast lighting, intense shadow effects, and that emotional breakthrough atmosphere with swirling energy patterns.",
+        "sad": "Gentle anime style with soft blue and purple tones, subtle rain or mist effects, warm rim lighting, and that touching emotional atmosphere with delicate light particles.",
+        "neutral": "Balanced anime aesthetic with natural lighting, clean color palette, soft shadows, and that peaceful everyday anime atmosphere with subtle environmental details.",
     }
 
     return mood_fallbacks.get(
-        mood, "clean manga style with expressive characters and dynamic compositions"
+        mood,
+        "Beautiful anime style with expressive character animation, vibrant colors, soft cel-shading, and that distinctive anime aesthetic with gentle lighting effects and atmospheric details.",
     )
 
 

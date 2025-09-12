@@ -2,8 +2,10 @@ import asyncio
 import json
 import re
 from typing import List, Dict, Any, Optional
-from langchain_google_vertexai import ChatVertexAI
-from langchain.prompts import PromptTemplate
+import os
+
+# Use LangChain Google GenAI instead of direct google.generativeai
+from langchain_google_genai import ChatGoogleGenerativeAI
 from loguru import logger
 from config.settings import settings
 from models.schemas import (
@@ -18,15 +20,13 @@ from utils.helpers import (
     validate_story_consistency,
     create_structured_image_prompt,
     generate_panel_prompt,
-    get_manga_style_by_mood,
+    get_anime_style_by_mood,
     create_user_context,
 )
 from utils.retry_helpers import exponential_backoff_async
-from services.image_service import image_service
-from services.audio_service import audio_service
-from services.storage_service import storage_service
+from services.nano_banana_service import nano_banana_service
+from services.chirp3hd_tts_service import chirp3hd_tts_service as audio_service
 from services.streaming_parser import StreamingStoryGenerator
-from services.panel_processor import panel_processor
 
 
 class StoryService:
@@ -37,16 +37,20 @@ class StoryService:
         self._initialize_streaming_generator()
 
     def _initialize_llm(self):
-        """Initialize ChatVertexAI LLM with hardcoded configuration."""
+        """Initialize Gemini using LangChain Google GenAI."""
         try:
-            # Hardcoded configuration - SDK uses GOOGLE_APPLICATION_CREDENTIALS automatically
-            self.llm = ChatVertexAI(
-                model_name=settings.model_name,
-                project=settings.vertex_ai_project_id,
-                temperature=0.9,
-                max_output_tokens=8192,
+            # Ensure Vertex AI is disabled to use direct Gemini API (nano-banana fix)
+            os.environ.pop("GOOGLE_GENAI_USE_VERTEXAI", None)
+
+            # Use LangChain ChatGoogleGenerativeAI for story generation
+            self.llm = ChatGoogleGenerativeAI(
+                model="gemini-2.5-flash",
+                google_api_key=settings.gemini_api_key,
+                temperature=0.7,
+                max_output_tokens=4096,
             )
-            logger.info("Story service ChatVertexAI initialized")
+
+            logger.info("✅ Story service initialized with LangChain Gemini 2.5 Flash")
 
         except Exception as e:
             logger.error(f"Failed to initialize story service LLM: {e}")
@@ -117,21 +121,17 @@ class StoryService:
 
             logger.info("🤖 Calling LLM with Story Architect prompt...")
 
-            # Generate the story structure with exponential backoff
+            # Generate the story structure with exponential backoff using LangChain
             response = await exponential_backoff_async(
-                asyncio.to_thread,
-                self.llm.invoke,
+                self.llm.ainvoke,
                 full_prompt,
                 max_retries=3,
                 initial_delay=2.0,
                 max_delay=30.0,
             )
 
-            # Extract content from ChatVertexAI response
-            if hasattr(response, "content"):
-                response_text = response.content
-            else:
-                response_text = str(response)
+            # Extract content from LangChain response
+            response_text = response.content
 
             # Parse the Story Architect response
             panels = self._parse_story_architect_response(response_text, inputs)
@@ -179,19 +179,15 @@ class StoryService:
 
                     # Generate image prompt with exponential backoff
                     response = await exponential_backoff_async(
-                        asyncio.to_thread,
-                        self.llm.invoke,
+                        self.llm.ainvoke,
                         full_prompt,
                         max_retries=3,
                         initial_delay=2.0,
                         max_delay=30.0,
                     )
 
-                    # Extract content
-                    if hasattr(response, "content"):
-                        response_text = response.content
-                    else:
-                        response_text = str(response)
+                    # Extract content from LangChain response
+                    response_text = response.content
 
                     return response_text.strip()
 
@@ -254,6 +250,10 @@ class StoryService:
                         "emotional_tone": self._determine_emotional_tone(
                             i, panel_match.group(1)
                         ),
+                        "user_mood": inputs.mood if inputs else "neutral",
+                        "user_vibe": (
+                            getattr(inputs, "vibe", "calm") if inputs else "calm"
+                        ),
                     }
                     panels.append(panel_data)
                 else:
@@ -265,6 +265,10 @@ class StoryService:
                         "style_guide": style_guide,
                         "dialogue_text": f"Panel {i} dialogue",
                         "emotional_tone": "neutral",
+                        "user_mood": inputs.mood if inputs else "neutral",
+                        "user_vibe": (
+                            getattr(inputs, "vibe", "calm") if inputs else "calm"
+                        ),
                     }
                     panels.append(panel_data)
 
@@ -391,7 +395,7 @@ class StoryService:
             vibe_value = (
                 self._get_legacy_field_value(inputs, "vibe", "vibe") or "shonen"
             )
-            manga_style = get_manga_style_by_mood(inputs.mood, vibe_value)
+            manga_style = get_anime_style_by_mood(inputs.mood, vibe_value)
 
         for i in range(1, 7):
             # Extract field values to avoid f-string backslash issues
@@ -446,6 +450,8 @@ class StoryService:
                 "image_prompt": f"Manga panel showing character's emotional journey in {manga_style}",
                 "music_prompt": f"Emotional {core_value} music for panel {i}",
                 "emotional_tone": self._determine_emotional_tone(i, ""),
+                "user_mood": inputs.mood if inputs else "neutral",
+                "user_vibe": getattr(inputs, "vibe", "calm") if inputs else "calm",
             }
             panels.append(panel_data)
         return panels
@@ -481,9 +487,9 @@ class StoryService:
             # Step 1: Generate story plan
             panels = await self.generate_story_plan(inputs)
 
-            # Step 2: Generate images (async)
+            # Step 2: Generate images using nano-banana (async)
             image_task = asyncio.create_task(
-                image_service.generate_panel_images(panels, story_id)
+                nano_banana_service.generate_panel_images_parallel(panels, story_id)
             )
 
             # Step 3: Generate audio with personalized voices (async)
@@ -560,25 +566,12 @@ class StoryService:
                 inputs, emit_progress
             )
 
-            # Set story context for dynamic music prompts with backward compatibility
+            # Story context for reference (simplified)
             story_context = {
                 "mood": inputs.mood,
-                "animeGenre": self._get_legacy_field_value(inputs, "vibe", "vibe")
-                or "adventure",  # Map vibe to animeGenre for compatibility
-                "archetype": self._get_legacy_field_value(
-                    inputs, "archetype", "archetype"
-                )
-                or "hero",
-                "supportSystem": inputs.supportSystem,
-                "coreValue": inputs.coreValue,
-                "pastResilience": inputs.pastResilience,  # Use new field directly
-                "innerDemon": inputs.innerDemon,
-                "desiredOutcome": inputs.desiredOutcome,
-                "secretWeapon": inputs.secretWeapon,
                 "age": inputs.age,
                 "gender": inputs.gender,
             }
-            panel_processor.set_story_context(story_context)
 
             # Collect all panels first, then process in parallel
             all_panels = []
@@ -590,17 +583,42 @@ class StoryService:
             # Convert age range to int for voice selection
             user_age_int = self._convert_age_range_to_int(inputs.age)
 
-            # Process all panels in parallel (generate all images first, then all audio)
-            processed_panels = await panel_processor.process_panels_parallel(
-                all_panels,
-                story_id,
-                emit_progress,
-                user_age_int,
-                inputs.gender,
-                story_seed=None,
+            # Use nano-banana pipeline for better speed and consistency
+            logger.info(
+                "🚀 Using nano-banana (Gemini 2.5 Flash Image Preview) pipeline"
             )
 
-            # Convert processed panels to frontend-expected format
+            # Run image and audio generation in parallel for maximum speed
+            logger.info("🎯 Starting parallel image and audio generation")
+            image_task = asyncio.create_task(
+                nano_banana_service.generate_panel_images_parallel(all_panels, story_id)
+            )
+            audio_task = asyncio.create_task(
+                audio_service.generate_all_audio(
+                    all_panels, story_id, user_age_int, inputs.gender
+                )
+            )
+
+            # Wait for both tasks to complete
+            image_urls, audio_urls = await asyncio.gather(image_task, audio_task)
+            logger.info("✅ Parallel generation completed")
+
+            # Combine results into processed panels format
+            processed_panels = []
+            for i, panel in enumerate(all_panels):
+                processed_panel = panel.copy()
+                processed_panel["image_url"] = (
+                    image_urls[i] if i < len(image_urls) else ""
+                )
+                processed_panel["tts_url"] = (
+                    audio_urls[1][i] if i < len(audio_urls[1]) else ""
+                )  # TTS URLs
+                processed_panel["music_url"] = (
+                    audio_urls[0][i] if i < len(audio_urls[0]) else ""
+                )  # Background URLs
+                processed_panels.append(processed_panel)
+
+            # Convert processed panels to frontend-expected format and emit individual completions
             frontend_panels = []
             for i, panel in enumerate(processed_panels):
                 frontend_panel = {
@@ -616,6 +634,17 @@ class StoryService:
                     },
                 }
                 frontend_panels.append(frontend_panel)
+
+                # Emit individual panel completion for real-time frontend updates
+                await emit_progress(
+                    event_type="panel_complete",
+                    data={
+                        "story_id": story_id,
+                        "panel_number": i + 1,
+                        "panel": frontend_panel,
+                        "status": "complete",
+                    },
+                )
 
             # Create response data in frontend-expected format
             response_data = {

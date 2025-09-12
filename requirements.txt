@@ -1,20 +1,43 @@
+# FastAPI and web framework dependencies
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
+
+# LangChain core dependencies
 langchain>=0.1.0
 langgraph>=0.0.20
-google-cloud-storage>=2.10.0
+langchain-core>=0.3.0
+
+# Latest Google Cloud and AI dependencies (2024)
+# Stable API - recommended for production
 google-cloud-aiplatform>=1.38.0
+google-cloud-storage>=2.10.0
 google-auth>=2.23.0
+
+# Latest LangChain Google integrations
+langchain-google-vertexai>=2.0.0
+langchain-google-genai>=2.0.0
+
+# Google GenAI SDK (recommended for Gemini)
+google-generativeai>=0.3.0
+
+# Web framework and utilities
 streamlit>=1.28.0
 python-multipart>=0.0.6
 aiofiles>=23.2.0
 python-dotenv>=1.0.0
 httpx>=0.25.0
+aiohttp>=3.9.0
+
+# Image processing
 pillow>=10.1.0
 
+# Logging and real-time communication
 loguru>=0.7.2
 python-socketio>=5.10.0
-uvicorn[standard]>=0.24.0
-aiohttp>=3.9.0
+
+# Additional dependencies for compatibility
+protobuf>=3.20.2,<6.0.0
+numpy>=1.21.0
+typing-extensions>=4.0.0
