@@ -11,6 +11,7 @@ import socketio
 
 from config.settings import settings
 from routers.manga_router import router as manga_router
+from routers.voice_agent_router import router as voice_agent_router
 
 
 # Create Socket.IO server
@@ -154,7 +155,6 @@ async def lifespan(app: FastAPI):
             chirp3hd_tts_service as audio_service,
         )
 
-        # Test service connections (nano-banana service has GCS built-in)
         logger.info("Nano-banana service with GCS and Chirp 3 HD initialized")
 
         logger.info("All services initialized successfully")
@@ -193,6 +193,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(manga_router, prefix="/api/v1")
+app.include_router(voice_agent_router, prefix="/api/v1")
 
 
 # Validation exception handler
@@ -254,6 +255,9 @@ async def root():
             "health": "/api/v1/health",
             "generate_manga": "/api/v1/generate-manga",
             "generate_manga_streaming": "/api/v1/generate-manga-streaming",
+            "voice_agent": "/api/v1/voice",
+            "voice_start_session": "/api/v1/voice/start-session",
+            "voice_websocket": "/api/v1/voice/ws/{session_id}",
             "socket_io": "/socket.io/",
         },
     }

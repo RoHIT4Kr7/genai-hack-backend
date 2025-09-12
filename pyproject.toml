@@ -13,23 +13,29 @@ dependencies = [
     "langchain-google-genai>=2.0.0",
     # LangChain
     "langchain>=0.1.0",
-    "langchain-core>=0.1.0",
+    "langchain-core>=0.3.0",
     # Google Cloud services (mandatory)
     "google-cloud-storage>=2.10.0",
     "google-cloud-texttospeech>=2.27.0",
     # Other dependencies
     "pydantic>=2.5.0",
-    "pillow>=10.0.0",
+    "pillow>=10.1.0",
     "loguru>=0.7.2",
     "python-dotenv>=1.0.0",
-    "aiofiles>=23.2.1",
+    "aiofiles>=23.2.0",
     "httpx>=0.25.0",
     "python-socketio>=5.10.0",
     "google-cloud-aiplatform>=1.38.0",
     "google-auth>=2.23.0",
     "langchain-google-vertexai>=2.0.0",
     "pydantic-settings>=2.1.0",
-    "langgraph>=0.6.7",
+    "langgraph>=0.0.20",
+    "streamlit>=1.28.0",
+    "aiohttp>=3.9.0",
+    "protobuf>=3.20.2,<6.0.0",
+    "numpy>=1.21.0",
+    "typing-extensions>=4.0.0",
+    "pyaudio>=0.2.11",
 ]
 
 [tool.hatch.build.targets.wheel]
