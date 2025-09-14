@@ -24,9 +24,9 @@ class NanoBananaService:
     """
 
     def __init__(self):
+
         # Ensure we're using Google AI Studio, not Vertex AI
         os.environ.pop("GOOGLE_GENAI_USE_VERTEXAI", None)
-
         # Initialize Gemini API
         self.api_key = settings.gemini_api_key
         if not self.api_key:
