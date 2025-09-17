@@ -1,5 +1,5 @@
 """
-Google Cloud Storage service for production use with calmira-backend bucket.
+Google Cloud Storage service for production use with hackathon-asset-genai bucket.
 """
 
 import os
@@ -14,7 +14,7 @@ class GCSStorageService:
     """Google Cloud Storage service for manga assets."""
 
     def __init__(self):
-        self.bucket_name = settings.gcs_bucket_name  # calmira-backend
+        self.bucket_name = settings.gcs_bucket_name  # hackathon-asset-genai
         self.client = None
         self.bucket = None
         self._initialize_client()
@@ -45,11 +45,11 @@ class GCSStorageService:
 
             # Generate signed URL (valid for 24 hours)
             from datetime import timedelta
+
             signed_url = blob.generate_signed_url(
-                expiration=timedelta(hours=24),
-                method="GET"
+                expiration=timedelta(hours=24), method="GET"
             )
-            
+
             logger.info(f"Uploaded to GCS: {path} -> signed URL generated")
             return signed_url
 
@@ -89,12 +89,11 @@ class GCSStorageService:
 
             assets = []
             from datetime import timedelta
-            
+
             for blob in blobs:
                 # Generate signed URL (valid for 24 hours)
                 signed_url = blob.generate_signed_url(
-                    expiration=timedelta(hours=24),
-                    method="GET"
+                    expiration=timedelta(hours=24), method="GET"
                 )
                 assets.append(signed_url)
 

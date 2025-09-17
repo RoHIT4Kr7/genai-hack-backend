@@ -23,15 +23,17 @@ load_env_file()
 
 class Settings:
     def __init__(self):
-        # Hardcoded Vertex AI Configuration - SDK uses GOOGLE_APPLICATION_CREDENTIALS env var automatically
-        self.vertex_ai_project_id = "n8n-local-463912"
+        # Vertex AI Configuration - SDK uses GOOGLE_APPLICATION_CREDENTIALS env var automatically
+        self.vertex_ai_project_id = os.getenv(
+            "VERTEX_AI_PROJECT_ID", "hackathon-472205"
+        )
         self.model_name = "gemini-2.5-flash"
 
         # Gemini API Configuration
         self.gemini_api_key = os.getenv("GEMINI_API_KEY", "")
 
-        # Hardcoded Storage Settings
-        self.gcs_bucket_name = "calmira-backend"
+        # Storage Settings
+        self.gcs_bucket_name = os.getenv("GCS_BUCKET_NAME", "hackathon-asset-genai")
 
         # Hardcoded Image Generation Settings
         self.imagen_seed = 42  # Default seed (will be overridden per story)

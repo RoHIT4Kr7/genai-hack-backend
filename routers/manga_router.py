@@ -347,7 +347,7 @@ async def root():
             "Mangaka-Sensei AI storytelling with Gemini 2.5 Flash",
             "Nano-banana (Gemini 2.5 Flash Image Preview) - 500 RPM",
             "Reference image generation for character consistency",
-            "GCS storage with calmira-backend bucket",
+            "GCS storage with hackathon-asset-genai bucket",
             "Chirp 3 HD TTS with age/gender voice selection",
             "Parallel panel generation",
             "LangGraph workflow orchestration",

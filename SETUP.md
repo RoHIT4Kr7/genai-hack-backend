@@ -22,7 +22,7 @@ Since we're using shared Google Cloud resources, you'll need the service account
 
 - Go to [Google Cloud Console](https://console.cloud.google.com/)
 - Navigate to IAM & Admin > Service Accounts
-- Find the service account: `n8n-550@n8n-local-463912.iam.gserviceaccount.com`
+- Find the service account: `hackathon@hackathon-472205.iam.gserviceaccount.com`
 - Create a new key (JSON format)
 - Download and rename to `servicekey.json`
 

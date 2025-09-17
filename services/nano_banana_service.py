@@ -19,7 +19,7 @@ class NanoBananaService:
     """
     Nano-banana service with mandatory features:
     1. Gemini 2.5 Flash Image Preview for image generation
-    2. GCS storage with calmira-backend bucket
+    2. GCS storage with hackathon-asset-genai bucket
     3. Reference image generation for character consistency
     """
 
@@ -45,7 +45,7 @@ class NanoBananaService:
 
         # Initialize GCS client
         self.gcs_client = storage.Client()
-        self.bucket_name = settings.gcs_bucket_name  # calmira-backend
+        self.bucket_name = settings.gcs_bucket_name  # hackathon-asset-genai
         self.bucket = self.gcs_client.bucket(self.bucket_name)
 
         # Store reference images per story

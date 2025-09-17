@@ -15,7 +15,7 @@ class Chirp3HDTTSService:
 
     def __init__(self):
         self.client = texttospeech.TextToSpeechClient()
-        self.bucket_name = settings.gcs_bucket_name  # calmira-backend
+        self.bucket_name = settings.gcs_bucket_name  # hackathon-asset-genai
         logger.info("✅ Chirp 3 HD TTS service initialized")
 
     def _select_voice(self, user_age: int, user_gender: str) -> Dict[str, str]:
@@ -70,37 +70,37 @@ class Chirp3HDTTSService:
     def _clean_text_for_tts(self, text: str) -> str:
         """Clean text for better TTS pronunciation and 8-10 second duration."""
         import re
-        
+
         # Remove quotes and special characters that don't help with narration
-        text = text.strip('"\'')
-        
+        text = text.strip("\"'")
+
         # Remove action descriptions in brackets/parentheses
-        text = re.sub(r'\[.*?\]', '', text)
-        text = re.sub(r'\(.*?\)', '', text)
-        
+        text = re.sub(r"\[.*?\]", "", text)
+        text = re.sub(r"\(.*?\)", "", text)
+
         # Replace em dashes and special punctuation with natural pauses
-        text = text.replace('—', ', ')
-        text = text.replace('–', ', ')
-        text = text.replace('...', '. ')
-        text = text.replace('..', '. ')
-        
+        text = text.replace("—", ", ")
+        text = text.replace("–", ", ")
+        text = text.replace("...", ". ")
+        text = text.replace("..", ". ")
+
         # Clean up multiple spaces and normalize punctuation
-        text = re.sub(r'\s+', ' ', text)
-        text = text.replace(' ,', ',').replace(' .', '.')
-        
+        text = re.sub(r"\s+", " ", text)
+        text = text.replace(" ,", ",").replace(" .", ".")
+
         # Ensure proper sentence ending for natural speech
         text = text.strip()
-        if text and not text.endswith(('.', '!', '?')):
-            text += '.'
-            
+        if text and not text.endswith((".", "!", "?")):
+            text += "."
+
         # Limit length for 8-10 second duration (approximately 25-35 words)
         words = text.split()
         if len(words) > 35:
             # Take first 35 words and ensure it ends properly
-            text = ' '.join(words[:35])
-            if not text.endswith(('.', '!', '?')):
-                text += '.'
-        
+            text = " ".join(words[:35])
+            if not text.endswith((".", "!", "?")):
+                text += "."
+
         return text
 
     async def generate_tts_audio(
@@ -165,10 +165,11 @@ class Chirp3HDTTSService:
             logger.info(
                 f"Chirp 3 HD TTS generated for panel {panel_number}: {audio_url}"
             )
-            
+
             # Emit real-time audio completion update
             try:
                 from utils.socket_utils import emit_generation_progress
+
                 await emit_generation_progress(
                     story_id=story_id,
                     event_type="panel_audio_ready",
@@ -176,13 +177,13 @@ class Chirp3HDTTSService:
                         "story_id": story_id,
                         "panel_number": panel_number,
                         "audio_url": audio_url,
-                        "status": "audio_complete"
-                    }
+                        "status": "audio_complete",
+                    },
                 )
                 logger.info(f"📡 Emitted panel_audio_ready for panel {panel_number}")
             except Exception as socket_error:
                 logger.warning(f"Failed to emit audio update: {socket_error}")
-            
+
             return audio_url
 
         except Exception as e:

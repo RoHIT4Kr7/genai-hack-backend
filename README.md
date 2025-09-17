@@ -102,9 +102,9 @@ python utils/test_voice_selection.py
 
 All settings are hardcoded in `config/settings.py`:
 
-- **Vertex AI Project**: `n8n-local-463912`
+- **Vertex AI Project**: `hackathon-472205`
 - **Imagen Model**: `imagen-4.0-generate-001`
-- **GCS Bucket**: `calmira-backend`
+- **GCS Bucket**: `hackathon-asset-genai`
 - **Voice Selection**: Age/gender-based
 
 Authentication uses `GOOGLE_APPLICATION_CREDENTIALS` environment variable.
