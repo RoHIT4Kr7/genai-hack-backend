@@ -3,7 +3,7 @@ from typing import Dict, Any, List
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 from loguru import logger
-from models.schemas import StoryInputs, GeneratedStory
+from models.schemas import StoryInputs, GeneratedStory, PanelData
 from services.story_service import story_service
 
 # Removed gemini_image_service - using nano_banana_service
@@ -11,6 +11,7 @@ from services.chirp3hd_audio_service import chirp3hd_audio_service as audio_serv
 from workflows.nano_banana_workflow_node import nano_banana_workflow_node
 from services.gcs_storage_service import gcs_storage_service as storage_service
 from utils.helpers import validate_story_consistency
+from utils.helpers import get_anime_style_by_mood
 
 
 # State is a plain dict to satisfy LangGraph expectations
@@ -113,9 +114,28 @@ async def nano_banana_reference_generation_node(
 async def nano_banana_image_generation_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """Generate all 6 panels using nano-banana with reference consistency."""
     try:
-        return await nano_banana_workflow_node.generate_panels_with_nano_banana_node(
-            state
+        # Use the robust service path that is validated to return real images
+        # instead of the workflow node (which was yielding placeholders).
+        from services.nano_banana_service import nano_banana_service
+
+        logger.info(
+            f"Starting nano-banana service panel generation for {state['story_id']}"
         )
+
+        if not state.get("panels"):
+            raise Exception("No panels available for nano-banana generation")
+
+        # Generate all panel images using the proven service implementation
+        panel_urls = await nano_banana_service.generate_panel_images_parallel(
+            state["panels"], state["story_id"]
+        )
+
+        state["image_urls"] = panel_urls
+        state["status"] = "nano_banana_images_generated"
+        logger.info(
+            f"Nano-banana service panel generation completed for {state['story_id']}: {len(panel_urls)} images"
+        )
+        return state
     except Exception as e:
         logger.error(f"Image generation failed for {state.get('story_id')}: {e}")
         state["error"] = f"Image generation failed: {str(e)}"
@@ -154,14 +174,158 @@ async def final_assembly_node(state: Dict[str, Any]) -> Dict[str, Any]:
     try:
         logger.info(f"Starting final assembly for {state['story_id']}")
 
-        # Create the final story object with separate audio URLs
+        # Map generated assets back onto each panel so the frontend gets image/narration/music per panel
+        panels: List[Dict[str, Any]] = state.get("panels", []) or []
+        image_urls: List[str] = state.get("image_urls", []) or []
+        tts_urls: List[str] = state.get("tts_urls", []) or []
+        bg_urls: List[str] = state.get("background_urls", []) or []
+
+        def ensure_character_sheet(
+            panel: Dict[str, Any], inputs: StoryInputs
+        ) -> Dict[str, Any]:
+            cs = panel.get("character_sheet") or {}
+            name = cs.get("name") or inputs.nickname
+            age = cs.get("age") or inputs.age
+            appearance = (
+                cs.get("appearance")
+                or f"determined {inputs.gender} with expressive eyes"
+            )
+            personality = cs.get("personality") or "determined and hopeful"
+            goals = cs.get("goals") or (
+                inputs.dream or inputs.desiredOutcome or "overcome challenges"
+            )
+            fears = cs.get("fears") or (
+                f"struggles with {inputs.innerDemon}"
+                if getattr(inputs, "innerDemon", None)
+                else "self-doubt"
+            )
+            strengths = cs.get("strengths") or (
+                f"inner resilience, {inputs.secretWeapon}"
+                if getattr(inputs, "secretWeapon", None)
+                else "inner resilience"
+            )
+            return {
+                "name": name,
+                "age": age,
+                "appearance": appearance,
+                "personality": personality,
+                "goals": goals,
+                "fears": fears,
+                "strengths": strengths,
+            }
+
+        def ensure_prop_sheet(
+            panel: Dict[str, Any], inputs: StoryInputs
+        ) -> Dict[str, Any]:
+            ps = panel.get("prop_sheet") or {}
+            items = ps.get("items") if isinstance(ps, dict) else None
+            if not items or not isinstance(items, list):
+                items = [
+                    getattr(inputs, "secretWeapon", None)
+                    or getattr(inputs, "hobby", None)
+                    or "meaningful object"
+                ]
+            environment = (
+                ps.get("environment")
+                or f"{getattr(inputs, 'vibe', 'inspiring')} setting that supports growth"
+            )
+            lighting = (
+                ps.get("lighting") or "dynamic lighting that conveys emotional state"
+            )
+            mood_elements = ps.get("mood_elements") if isinstance(ps, dict) else None
+            if not mood_elements or not isinstance(mood_elements, list):
+                mood_elements = [
+                    inputs.coreValue if getattr(inputs, "coreValue", None) else "hope",
+                    "growth",
+                    "determination",
+                ]
+            return {
+                "items": items,
+                "environment": environment,
+                "lighting": lighting,
+                "mood_elements": mood_elements,
+            }
+
+        def ensure_style_guide(
+            panel: Dict[str, Any], inputs: StoryInputs
+        ) -> Dict[str, Any]:
+            sg = panel.get("style_guide") or {}
+            art_style = sg.get("art_style") or get_anime_style_by_mood(
+                inputs.mood, getattr(inputs, "vibe", "calm")
+            )
+            color_palette = (
+                sg.get("color_palette")
+                or "soft natural tones with warm ambers, gentle blues, and earthy greens"
+            )
+            panel_layout = (
+                sg.get("panel_layout")
+                or "cinematic manga panel composition with clear focus on character and environment"
+            )
+            visual_elements = (
+                sg.get("visual_elements") if isinstance(sg, dict) else None
+            )
+            if not visual_elements or not isinstance(visual_elements, list):
+                visual_elements = [
+                    "dynamic composition",
+                    "emotional expression",
+                    "typography dialogue",
+                ]
+            return {
+                "art_style": art_style,
+                "color_palette": color_palette,
+                "panel_layout": panel_layout,
+                "visual_elements": visual_elements,
+            }
+
+        enriched_panels: List[PanelData] = []
+        for idx, panel in enumerate(panels):
+            # Create enriched panel data with URLs
+            image_url = image_urls[idx] if idx < len(image_urls) else ""
+            tts_url = tts_urls[idx] if idx < len(tts_urls) else ""
+            music_url = (
+                bg_urls[idx]
+                if idx < len(bg_urls)
+                else "/src/assets/audio/background-music.mp3"
+            )
+
+            # Create PanelData object with all required fields
+            enriched = PanelData(
+                # Original panel data
+                panel_number=panel.get("panel_number", idx + 1),
+                character_sheet=ensure_character_sheet(panel, state["inputs"]),
+                prop_sheet=ensure_prop_sheet(panel, state["inputs"]),
+                style_guide=ensure_style_guide(panel, state["inputs"]),
+                dialogue_text=panel.get("dialogue_text", ""),
+                image_prompt=panel.get("image_prompt", ""),
+                music_prompt=panel.get("music_prompt", ""),
+                emotional_tone=panel.get("emotional_tone", "neutral"),
+                tts_text=panel.get("tts_text", ""),
+                # Enhanced URL fields for frontend
+                id=str(panel.get("panel_number", idx + 1)),
+                image_url=image_url,
+                tts_url=tts_url,
+                music_url=music_url,
+                imageUrl=image_url,
+                narrationUrl=tts_url,
+                backgroundMusicUrl=music_url,
+            )
+
+            enriched_panels.append(enriched)
+
+        # Update state panels with enriched data
+        state["panels"] = enriched_panels
+
+        # Create the final story object with enriched panels and overall image list
         story = GeneratedStory(
             story_id=state["story_id"],
-            panels=state["panels"],
-            image_urls=state["image_urls"],
+            panels=enriched_panels,
+            image_urls=image_urls,
             audio_url="",  # No synchronized audio - separate background and TTS URLs available
             status="completed",
         )
+
+        # Attach to state for consumers that expect it during the workflow
+        state["story"] = story
 
         state["status"] = "completed"
         logger.info(f"Final assembly completed for {state['story_id']}")

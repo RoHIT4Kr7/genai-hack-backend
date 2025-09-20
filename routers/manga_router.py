@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from fastapi.responses import JSONResponse
 from typing import Dict, Any
 from loguru import logger
@@ -12,12 +12,17 @@ from models.schemas import (
     HealthResponse,
 )
 from services.story_service import story_service
+from utils.auth import get_current_user
+from models.user import User
 
 # Removed sequential_story_service - using simplified nano-banana only
 from services.nano_banana_service import nano_banana_service
 
 from workflows.manga_workflow import MangaWorkflowManager
 from utils.helpers import create_timestamp, log_api_call
+from sqlalchemy.orm import Session
+from models.db import get_db
+from models.manga import MangaRequest as DBMangaRequest
 from utils.socket_utils import emit_generation_progress
 
 # Create router instance
@@ -27,6 +32,8 @@ router = APIRouter()
 @router.post("/generate-manga", response_model=StoryGenerationResponse)
 async def generate_manga_story(
     request: StoryGenerationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> StoryGenerationResponse:
     """
     Generate a complete 6-panel manga story for mental wellness.
@@ -70,6 +77,23 @@ async def generate_manga_story(
         logger.success(f"✅ Manga story generated: {story.story_id}")
         log_api_call("/generate-manga", request.dict(), response.dict())
 
+        # Persist manga request for dashboard/recent creations
+        try:
+            first_image = (
+                story.image_urls[0] if getattr(story, "image_urls", None) else None
+            )
+            db_item = DBMangaRequest(
+                user_id=current_user.id,
+                story_id=story.story_id,
+                inputs_json=request.model_dump_json(),
+                result_url=first_image,
+                title=manga_title,
+            )
+            db.add(db_item)
+            db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to persist manga request {story.story_id}: {e}")
+
         return response
 
     except HTTPException:
@@ -84,6 +108,7 @@ async def generate_manga_story(
 @router.post("/test-minimal", response_model=StoryGenerationResponse)
 async def test_minimal_generation(
     request: StoryGenerationRequest,
+    current_user: User = Depends(get_current_user),
 ) -> StoryGenerationResponse:
     """Minimal test endpoint to isolate hanging issues."""
     try:
@@ -108,6 +133,8 @@ async def test_minimal_generation(
 @router.post("/generate-manga-streaming", response_model=StoryGenerationResponse)
 async def generate_manga_story_streaming(
     request: StoryGenerationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> StoryGenerationResponse:
     """
     Generate a 6-panel manga story using parallel panel processing.
@@ -171,6 +198,28 @@ async def generate_manga_story_streaming(
 
         logger.success(f"✅ Sequential manga story generated: {story_data.story_id}")
         log_api_call("/generate-manga-streaming", request.dict(), response.dict())
+
+        # Persist manga request
+        try:
+            story_obj = response.story
+            first_image = (
+                story_obj.image_urls[0]
+                if story_obj and getattr(story_obj, "image_urls", None)
+                else None
+            )
+            db_item = DBMangaRequest(
+                user_id=current_user.id,
+                story_id=response.story_id,
+                inputs_json=request.model_dump_json(),
+                result_url=first_image,
+                title=manga_title,
+            )
+            db.add(db_item)
+            db.commit()
+        except Exception as e:
+            logger.warning(
+                f"Failed to persist streaming manga request {response.story_id}: {e}"
+            )
 
         return response
 
@@ -253,6 +302,8 @@ async def health_check() -> HealthResponse:
 @router.post("/generate-manga-nano-banana", response_model=StoryGenerationResponse)
 async def generate_manga_story_nano_banana(
     request: StoryGenerationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> StoryGenerationResponse:
     """
     Generate a complete 6-panel manga story using Nano-Banana + Chirp 3 HD LangGraph Workflow.
@@ -312,6 +363,24 @@ async def generate_manga_story_nano_banana(
         )
 
         logger.success(f"✅ Nano-banana LangGraph workflow completed: {story.story_id}")
+        # Persist manga request
+        try:
+            first_image = (
+                story.image_urls[0] if getattr(story, "image_urls", None) else None
+            )
+            db_item = DBMangaRequest(
+                user_id=current_user.id,
+                story_id=story.story_id,
+                inputs_json=request.model_dump_json(),
+                result_url=first_image,
+                title=manga_title,
+            )
+            db.add(db_item)
+            db.commit()
+        except Exception as e:
+            logger.warning(
+                f"Failed to persist nano-banana manga request {story.story_id}: {e}"
+            )
         return response
 
     except Exception as e:

@@ -12,6 +12,11 @@ import socketio
 from config.settings import settings
 from routers.manga_router import router as manga_router
 from routers.voice_agent_router import router as voice_agent_router
+from routers.dhyaan_router import router as dhyaan_router
+from routers.auth_router import router as auth_router
+from routers.dashboard_router import router as dashboard_router
+from models.db import Base, engine
+import models  # noqa: F401 - ensure models are imported for metadata registration
 
 
 # Create Socket.IO server
@@ -147,20 +152,36 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Manga Wellness Backend...")
     setup_logging()
 
-    # Initialize services
+    # Initialize services (non-fatal so auth and core API can run even if audio deps missing)
     try:
-        from services.nano_banana_service import nano_banana_service
-        from services.story_service import story_service
-        from services.chirp3hd_tts_service import (
-            chirp3hd_tts_service as audio_service,
-        )
+        from services.nano_banana_service import nano_banana_service  # type: ignore
+        from services.story_service import story_service  # type: ignore
 
-        logger.info("Nano-banana service with GCS and Chirp 3 HD initialized")
+        # Audio/voice service may require optional system deps (e.g., pyaudio). Guard it.
+        try:
+            from services.chirp3hd_tts_service import (
+                chirp3hd_tts_service as audio_service,  # type: ignore
+            )
 
-        logger.info("All services initialized successfully")
+            logger.info("Audio service initialized")
+        except Exception as audio_exc:
+            logger.warning(
+                f"Audio service unavailable: {audio_exc}. Continuing without voice features"
+            )
+
+        logger.info("Core services initialized successfully")
 
     except Exception as e:
-        logger.error(f"Service initialization failed: {e}")
+        logger.warning(
+            f"Core services failed to initialize: {e}. Continuing startup with limited functionality"
+        )
+
+    # Create DB tables
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables are ready")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
         raise
 
     yield
@@ -189,11 +210,21 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_origin_regex=".*",
 )
 
 # Include routers
 app.include_router(manga_router, prefix="/api/v1")
 app.include_router(voice_agent_router, prefix="/api/v1")
+app.include_router(dhyaan_router, prefix="/api/v1")
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(dashboard_router, prefix="/api/v1")
+
+# Log available routes for debugging
+logger.info("📍 Available API routes:")
+for route in app.routes:
+    if hasattr(route, "path") and hasattr(route, "methods"):
+        logger.info(f"  {route.methods} {route.path}")
 
 
 # Validation exception handler
@@ -258,6 +289,9 @@ async def root():
             "voice_agent": "/api/v1/voice",
             "voice_start_session": "/api/v1/voice/start-session",
             "voice_websocket": "/api/v1/voice/ws/{session_id}",
+            "dhyaan_generate": "/api/v1/generate-meditation",
+            "dhyaan_options": "/api/v1/meditation-options",
+            "dhyaan_health": "/api/v1/health",
             "socket_io": "/socket.io/",
         },
     }

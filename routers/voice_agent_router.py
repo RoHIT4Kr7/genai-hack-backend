@@ -3,7 +3,7 @@ Voice Agent Router for Anime Generation
 Provides REST endpoints for voice interaction and transcription
 """
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Depends
 from fastapi.responses import JSONResponse
 from typing import Dict, Any, List, Optional
 from loguru import logger
@@ -13,6 +13,11 @@ import json
 
 from models.schemas import BaseModel
 from services.voice_agent_service import voice_agent_service
+from sqlalchemy.orm import Session
+from models.db import get_db
+from utils.auth import get_current_user, decode_token
+from models.user import User
+from models.voice import VoiceSession as DBVoiceSession, VoiceMessage as DBVoiceMessage
 from utils.helpers import create_timestamp, log_api_call
 
 # Create router instance
@@ -56,7 +61,11 @@ class TranscriptionResponse(BaseModel):
 
 
 @router.post("/voice/start-session", response_model=VoiceSessionResponse)
-async def start_voice_session(request: VoiceSessionRequest) -> VoiceSessionResponse:
+async def start_voice_session(
+    request: VoiceSessionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> VoiceSessionResponse:
     """
     Start a new voice agent session for anime generation assistance.
 
@@ -92,6 +101,20 @@ async def start_voice_session(request: VoiceSessionRequest) -> VoiceSessionRespo
                     "timestamp": create_timestamp(),
                 }
 
+            # Persist as user message
+            try:
+                db_sess = (
+                    db.query(DBVoiceSession)
+                    .filter(DBVoiceSession.session_id == session_id)
+                    .first()
+                )
+                if db_sess:
+                    msg = DBVoiceMessage(session_id=db_sess.id, role="user", text=text)
+                    db.add(msg)
+                    db.commit()
+            except Exception as e:
+                logger.warning(f"Failed to persist transcription for {session_id}: {e}")
+
         async def response_callback(text: str):
             """Handle AI responses."""
             logger.info(f"🤖 AI Response [{session_id}]: {text}")
@@ -101,6 +124,20 @@ async def start_voice_session(request: VoiceSessionRequest) -> VoiceSessionRespo
                     "text": text,
                     "timestamp": create_timestamp(),
                 }
+
+            # Persist as ai message
+            try:
+                db_sess = (
+                    db.query(DBVoiceSession)
+                    .filter(DBVoiceSession.session_id == session_id)
+                    .first()
+                )
+                if db_sess:
+                    msg = DBVoiceMessage(session_id=db_sess.id, role="ai", text=text)
+                    db.add(msg)
+                    db.commit()
+            except Exception as e:
+                logger.warning(f"Failed to persist AI response for {session_id}: {e}")
 
         # Start voice agent session
         success = await voice_agent_service.start_session(
@@ -116,13 +153,34 @@ async def start_voice_session(request: VoiceSessionRequest) -> VoiceSessionRespo
 
         # Track active session
         active_sessions[session_id] = {
-            "user_id": request.user_id,
+            "user_id": str(current_user.id) if current_user else None,
             "context": request.context,
             "started_at": create_timestamp(),
             "status": "active",
             "last_transcription": None,
             "last_response": None,
         }
+
+        # Persist DB voice session (auth optional; use provided user_id if available)
+        try:
+            # Attempt to coerce request.user_id to int if provided
+            db_user_id = None
+            if getattr(request, "user_id", None):
+                try:
+                    db_user_id = int(str(request.user_id))
+                except Exception:
+                    db_user_id = None
+
+            db_session = DBVoiceSession(
+                session_id=session_id,
+                user_id=db_user_id or (current_user.id if current_user else None),
+                context=request.context,
+                status="active",
+            )
+            db.add(db_session)
+            db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to persist voice session {session_id}: {e}")
 
         response = VoiceSessionResponse(
             session_id=session_id,
@@ -144,7 +202,11 @@ async def start_voice_session(request: VoiceSessionRequest) -> VoiceSessionRespo
 
 
 @router.post("/voice/stop-session", response_model=VoiceSessionResponse)
-async def stop_voice_session(session_id: str) -> VoiceSessionResponse:
+async def stop_voice_session(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> VoiceSessionResponse:
     """
     Stop an active voice agent session.
 
@@ -154,17 +216,39 @@ async def stop_voice_session(session_id: str) -> VoiceSessionResponse:
     try:
         logger.info(f"🛑 Stopping voice session: {session_id}")
 
-        if session_id not in active_sessions:
+        session_tracked = session_id in active_sessions
+        service_tracked = session_id in voice_agent_service.active_sessions
+
+        if not session_tracked and not service_tracked:
+            # Nothing to stop
             raise HTTPException(
                 status_code=404, detail=f"Voice session {session_id} not found"
             )
 
-        # Stop the voice agent service
-        await voice_agent_service.stop_session(session_id)
+        # Stop the voice agent service regardless of router tracking state
+        try:
+            await voice_agent_service.stop_session(session_id)
+        except Exception as e:
+            logger.warning(f"Error stopping voice session in service: {e}")
 
         # Update session status
-        active_sessions[session_id]["status"] = "stopped"
-        active_sessions[session_id]["stopped_at"] = create_timestamp()
+        if session_id in active_sessions:
+            active_sessions[session_id]["status"] = "stopped"
+            active_sessions[session_id]["stopped_at"] = create_timestamp()
+
+        # Persist DB status update
+        try:
+            db_sess = (
+                db.query(DBVoiceSession)
+                .filter(DBVoiceSession.session_id == session_id)
+                .first()
+            )
+            if db_sess:
+                db_sess.status = "stopped"
+                db_sess.stopped_at = datetime.utcnow()
+                db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to update DB voice session {session_id}: {e}")
 
         response = VoiceSessionResponse(
             session_id=session_id,
@@ -186,7 +270,11 @@ async def stop_voice_session(session_id: str) -> VoiceSessionResponse:
 
 
 @router.post("/voice/send-message", response_model=Dict[str, Any])
-async def send_text_message(request: TextMessageRequest) -> Dict[str, Any]:
+async def send_text_message(
+    request: TextMessageRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
     """
     Send a text message to the active voice agent.
 
@@ -210,7 +298,9 @@ async def send_text_message(request: TextMessageRequest) -> Dict[str, Any]:
             )
 
         # Send message to voice agent
-        success = await voice_agent_service.send_text_message(request.session_id, request.message)
+        success = await voice_agent_service.send_text_message(
+            request.session_id, request.message
+        )
 
         if not success:
             raise HTTPException(
@@ -222,6 +312,24 @@ async def send_text_message(request: TextMessageRequest) -> Dict[str, Any]:
             "text": request.message,
             "timestamp": create_timestamp(),
         }
+
+        # Persist user message
+        try:
+            db_sess = (
+                db.query(DBVoiceSession)
+                .filter(DBVoiceSession.session_id == request.session_id)
+                .first()
+            )
+            if db_sess:
+                msg = DBVoiceMessage(
+                    session_id=db_sess.id, role="user", text=request.message
+                )
+                db.add(msg)
+                db.commit()
+        except Exception as e:
+            logger.warning(
+                f"Failed to persist text message for {request.session_id}: {e}"
+            )
 
         return {
             "session_id": request.session_id,
@@ -332,8 +440,20 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str):
     - Session status changes
     - Error notifications
     """
+    # Accept immediately to avoid 403 handshake rejections; treat token as optional
     await websocket.accept()
-    logger.info(f"🔌 WebSocket connected for voice session: {session_id}")
+    token = websocket.query_params.get("token")
+    user_id = None
+    if token:
+        try:
+            payload = decode_token(token)
+            user_id = payload.get("sub")
+        except Exception:
+            # Invalid token; proceed as anonymous in dev/testing
+            user_id = None
+    logger.info(
+        f"🔌 WebSocket connected for voice session: {session_id} (user_id={user_id})"
+    )
 
     try:
         # Check if session exists
@@ -347,6 +467,32 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str):
             )
             await websocket.close()
             return
+
+        # Attach user to session if present
+        if session_id in active_sessions and user_id:
+            active_sessions[session_id]["user_id"] = str(user_id)
+
+        # Ensure DB session exists and is linked to user
+        try:
+            # Note: can't use Depends in websocket; use new session
+            from models.db import SessionLocal
+
+            db_ws = SessionLocal()
+            try:
+                db_sess = (
+                    db_ws.query(DBVoiceSession)
+                    .filter(DBVoiceSession.session_id == session_id)
+                    .first()
+                )
+                if db_sess and not db_sess.user_id and user_id:
+                    db_sess.user_id = int(user_id)
+                    db_ws.commit()
+            finally:
+                db_ws.close()
+        except Exception as e:
+            logger.warning(
+                f"WS linking DB voice session user failed for {session_id}: {e}"
+            )
 
         # Send initial status
         await websocket.send_json(
@@ -429,21 +575,48 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str):
         logger.error(f"❌ WebSocket error for session {session_id}: {e}")
     finally:
         logger.info(f"🔌 WebSocket connection closed for voice session: {session_id}")
-        
+
         # CRITICAL: Stop the voice agent session when WebSocket disconnects
         try:
             if session_id in active_sessions:
-                logger.info(f"🛑 Auto-stopping voice session due to WebSocket disconnect: {session_id}")
+                logger.info(
+                    f"🛑 Auto-stopping voice session due to WebSocket disconnect: {session_id}"
+                )
                 await voice_agent_service.stop_session(session_id)
-                
+
                 # Update session status
                 if session_id in active_sessions:
                     active_sessions[session_id]["status"] = "stopped"
                     active_sessions[session_id]["stopped_at"] = create_timestamp()
-                    
-                logger.success(f"✅ Voice session {session_id} stopped due to WebSocket disconnect")
+                # Persist DB status update
+                try:
+                    from models.db import SessionLocal
+
+                    db_ws = SessionLocal()
+                    try:
+                        db_sess = (
+                            db_ws.query(DBVoiceSession)
+                            .filter(DBVoiceSession.session_id == session_id)
+                            .first()
+                        )
+                        if db_sess:
+                            db_sess.status = "stopped"
+                            db_sess.stopped_at = datetime.utcnow()
+                            db_ws.commit()
+                    finally:
+                        db_ws.close()
+                except Exception as e:
+                    logger.warning(
+                        f"WS disconnect DB voice session update failed for {session_id}: {e}"
+                    )
+
+                logger.success(
+                    f"✅ Voice session {session_id} stopped due to WebSocket disconnect"
+                )
         except Exception as cleanup_error:
-            logger.error(f"❌ Error during WebSocket disconnect cleanup: {cleanup_error}")
+            logger.error(
+                f"❌ Error during WebSocket disconnect cleanup: {cleanup_error}"
+            )
 
 
 @router.get("/voice/health")

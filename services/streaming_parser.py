@@ -83,6 +83,9 @@ class StreamingPanelParser:
             rf"PANEL_{panel_number}:\s*dialogue_text:\s*([^\n]+)",  # Without quotes, until newline
             rf'PANEL_{panel_number}:[^:]*dialogue_text[:\s]*"([^"]*)"',  # Flexible format with quotes
             rf"PANEL_{panel_number}:[^:]*dialogue_text[:\s]*([^\n]+)",  # Flexible format without quotes
+            rf"Panel\s*{panel_number}:\s*'([^']*)'",  # Panel X: 'content' format (single quotes)
+            rf'Panel\s*{panel_number}:\s*"([^"]*)"',  # Panel X: "content" format (double quotes)
+            rf"Panel\s*{panel_number}:\s*([^'\"]+(?:'[^']*'[^'\"]*)*)",  # Panel X: mixed content with quotes
         ]
 
         dialogue_text = None
@@ -345,10 +348,10 @@ class StreamingStoryGenerator:
             Please create a complete 6-panel manga story structure following the Story Architect guidelines.
             """
 
-            # Combine Story Architect prompt with user inputs
+            # 🚨 CRITICAL FIX: Properly format the template with user context
             from utils.helpers import STORY_ARCHITECT_PROMPT
 
-            full_prompt = STORY_ARCHITECT_PROMPT + "\n\n" + input_context
+            full_prompt = STORY_ARCHITECT_PROMPT.format(user_context=input_context)
 
             logger.info("Starting streaming LLM call")
 

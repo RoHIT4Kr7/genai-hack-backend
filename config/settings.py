@@ -45,13 +45,29 @@ class Settings:
             "en-US-Chirp3-HD-Charon"  # Replace with actual Chirp API key
         )
 
-        # Hardcoded API Settings
+        # API Settings
         self.api_host = "0.0.0.0"
         self.api_port = 8000
-        self.debug = False
+        # Allow enabling debug mode via env for local development
+        self.debug = os.getenv("DEBUG", "false").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
 
-        # Hardcoded CORS Settings
-        self.cors_origins = "http://localhost:8501,http://127.0.0.1:8501,http://localhost:8080,http://127.0.0.1:8080"
+        # Hardcoded CORS Settings (add Vite default port 5173 and production ports)
+        self.cors_origins = os.getenv(
+            "CORS_ORIGINS",
+            "http://localhost:5173,http://127.0.0.1:5173,"
+            "http://localhost:8501,http://127.0.0.1:8501,"
+            "http://localhost:8080,http://127.0.0.1:8080,"
+            "http://localhost:3000,http://127.0.0.1:3000,"
+            "http://localhost:4173,http://127.0.0.1:4173,"
+            "http://localhost:8000,http://127.0.0.1:8000,"
+            "ws://localhost:8000,ws://127.0.0.1:8000,"
+            "http://localhost,https://localhost",
+        )
 
         # Workflow Settings
         self.max_retries = 3
@@ -62,6 +78,13 @@ class Settings:
         self.image_generation_timeout = 90  # Seconds per image
         self.tts_generation_timeout = 30  # Seconds per TTS
         self.max_concurrent_images = 3  # Limit concurrent image generation
+
+        # Auth settings
+        self.google_client_id = os.getenv("GOOGLE_CLIENT_ID", "")
+        self.jwt_secret_key = os.getenv("JWT_SECRET_KEY", "change-me-in-prod")
+        self.jwt_algorithm = os.getenv("JWT_ALGORITHM", "HS256")
+        # Minutes (1 week = 7 days * 24 hours * 60 minutes = 10,080 minutes)
+        self.jwt_expires_minutes = int(os.getenv("JWT_EXPIRES_MIN", "10080"))
 
     @property
     def cors_origins_list(self) -> list:

@@ -21,6 +21,7 @@ langchain-google-genai>=2.0.0
 
 # Google GenAI SDK (recommended for Gemini)
 google-generativeai>=0.3.0
+google-genai>=0.3.0
 
 # Web framework and utilities
 streamlit>=1.28.0
@@ -44,3 +45,7 @@ typing-extensions>=4.0.0
 
 # Voice Agent dependencies
 pyaudio>=0.2.11
+
+# Auth and database for Google Sign-In
+python-jose[cryptography]>=3.3.0
+SQLAlchemy>=2.0.0

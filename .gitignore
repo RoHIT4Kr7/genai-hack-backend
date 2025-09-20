@@ -5,7 +5,7 @@
 
 # Google Cloud credentials
 servicekey.json
-*.json
+
 credentials/
 gcp-credentials/
 

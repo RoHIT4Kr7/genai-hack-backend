@@ -1,0 +1,212 @@
+{
+  "sad_joy": {
+    "file": "gs://hackathon-asset-genai/meditative-music/sad_joy.mp3",
+    "duration": 384,
+    "bestFor": ["sad"],
+    "target": ["joy"]
+  },
+  "sad_love": {
+    "file": "gs://hackathon-asset-genai/meditative-music/sad_love.mp3",
+    "duration": 389,
+    "bestFor": ["sad"],
+    "target": ["love"]
+  },
+  "sad_peaceful": {
+    "file": "gs://hackathon-asset-genai/meditative-music/sad_peaceful.mp3",
+    "duration": 147,
+    "bestFor": ["sad"],
+    "target": ["peaceful"]
+  },
+  "sad_gratitude": {
+    "file": "gs://hackathon-asset-genai/meditative-music/sad_gratitude.mp3",
+    "duration": 236,
+    "bestFor": ["sad"],
+    "target": ["gratitude"]
+  },
+  "sad_acceptance": {
+    "file": "gs://hackathon-asset-genai/meditative-music/sad_acceptance.mp3",
+    "duration": 384,
+    "bestFor": ["sad"],
+    "target": ["acceptance"]
+  },
+  "upset_joy": {
+    "file": "gs://hackathon-asset-genai/meditative-music/upset_joy.mp3",
+    "duration": 372,
+    "bestFor": ["upset"],
+    "target": ["joy"]
+  },
+  "upset_love": {
+    "file": "gs://hackathon-asset-genai/meditative-music/upset_love.mp3",
+    "duration": 382,
+    "bestFor": ["upset"],
+    "target": ["love"]
+  },
+  "upset_peaceful": {
+    "file": "gs://hackathon-asset-genai/meditative-music/upset_peaceful.mp3",
+    "duration": 257,
+    "bestFor": ["upset"],
+    "target": ["peaceful"]
+  },
+  "upset_gratitude": {
+    "file": "gs://hackathon-asset-genai/meditative-music/upset_gratitude.mp3",
+    "duration": 346,
+    "bestFor": ["upset"],
+    "target": ["gratitude"]
+  },
+  "upset_acceptance": {
+    "file": "gs://hackathon-asset-genai/meditative-music/upset_acceptance.mp3",
+    "duration": 345,
+    "bestFor": ["upset"],
+    "target": ["acceptance"]
+  },
+  "anxious_joy": {
+    "file": "gs://hackathon-asset-genai/meditative-music/anxious_joy.mp3",
+    "duration": 288,
+    "bestFor": ["anxious"],
+    "target": ["joy"]
+  },
+  "anxious_love": {
+    "file": "gs://hackathon-asset-genai/meditative-music/anxious_love.mp3",
+    "duration": 391,
+    "bestFor": ["anxious"],
+    "target": ["love"]
+  },
+  "anxious_peaceful": {
+    "file": "gs://hackathon-asset-genai/meditative-music/anxious_peaceful.mp3",
+    "duration": 385,
+    "bestFor": ["anxious"],
+    "target": ["peaceful"]
+  },
+  "anxious_gratitude": {
+    "file": "gs://hackathon-asset-genai/meditative-music/anxious_gratitude.mp3",
+    "duration": 360,
+    "bestFor": ["anxious"],
+    "target": ["gratitude"]
+  },
+  "anxious_acceptance": {
+    "file": "gs://hackathon-asset-genai/meditative-music/anxious_acceptance.mp3",
+    "duration": 345,
+    "bestFor": ["anxious"],
+    "target": ["acceptance"]
+  },
+  "fearful_joy": {
+    "file": "gs://hackathon-asset-genai/meditative-music/fearful_joy.mp3",
+    "duration": 346,
+    "bestFor": ["fearful"],
+    "target": ["joy"]
+  },
+  "fearful_love": {
+    "file": "gs://hackathon-asset-genai/meditative-music/fearful_love.mp3",
+    "duration": 196,
+    "bestFor": ["fearful"],
+    "target": ["love"]
+  },
+  "fearful_peaceful": {
+    "file": "gs://hackathon-asset-genai/meditative-music/fearful_peaceful.mp3",
+    "duration": 360,
+    "bestFor": ["fearful"],
+    "target": ["peaceful"]
+  },
+  "fearful_gratitude": {
+    "file": "gs://hackathon-asset-genai/meditative-music/fearful_gratitude.mp3",
+    "duration": 361,
+    "bestFor": ["fearful"],
+    "target": ["gratitude"]
+  },
+  "fearful_acceptance": {
+    "file": "gs://hackathon-asset-genai/meditative-music/fearful_acceptance.mp3",
+    "duration": 360,
+    "bestFor": ["fearful"],
+    "target": ["acceptance"]
+  },
+  "lonely_joy": {
+    "file": "gs://hackathon-asset-genai/meditative-music/lonely_joy.mp3",
+    "duration": 303,
+    "bestFor": ["lonely"],
+    "target": ["joy"]
+  },
+  "lonely_love": {
+    "file": "gs://hackathon-asset-genai/meditative-music/lonely_love.mp3",
+    "duration": 360,
+    "bestFor": ["lonely"],
+    "target": ["love"]
+  },
+  "lonely_peaceful": {
+    "file": "gs://hackathon-asset-genai/meditative-music/lonely_peaceful.mp3",
+    "duration": 384,
+    "bestFor": ["lonely"],
+    "target": ["peaceful"]
+  },
+  "lonely_gratitude": {
+    "file": "gs://hackathon-asset-genai/meditative-music/lonely_gratitude.mp3",
+    "duration": 345,
+    "bestFor": ["lonely"],
+    "target": ["gratitude"]
+  },
+  "lonely_acceptance": {
+    "file": "gs://hackathon-asset-genai/meditative-music/lonely_acceptance.mp3",
+    "duration": 355,
+    "bestFor": ["lonely"],
+    "target": ["acceptance"]
+  },
+  "guilty_joy": {
+    "file": "gs://hackathon-asset-genai/meditative-music/guilty_joy.mp3",
+    "duration": 360,
+    "bestFor": ["guilty"],
+    "target": ["joy"]
+  },
+  "guilty_love": {
+    "file": "gs://hackathon-asset-genai/meditative-music/guilty_love.mp3",
+    "duration": 263,
+    "bestFor": ["guilty"],
+    "target": ["love"]
+  },
+  "guilty_peaceful": {
+    "file": "gs://hackathon-asset-genai/meditative-music/guilty_peaceful.mp3",
+    "duration": 384,
+    "bestFor": ["guilty"],
+    "target": ["peaceful"]
+  },
+  "guilty_gratitude": {
+    "file": "gs://hackathon-asset-genai/meditative-music/guilty_gratitude.mp3",
+    "duration": 254,
+    "bestFor": ["guilty"],
+    "target": ["gratitude"]
+  },
+  "guilty_acceptance": {
+    "file": "gs://hackathon-asset-genai/meditative-music/guilty_acceptance.mp3",
+    "duration": 156,
+    "bestFor": ["guilty"],
+    "target": ["acceptance"]
+  },
+  "depressed_joy": {
+    "file": "gs://hackathon-asset-genai/meditative-music/depressed_joy.mp3",
+    "duration": 387,
+    "bestFor": ["depressed"],
+    "target": ["joy"]
+  },
+  "depressed_love": {
+    "file": "gs://hackathon-asset-genai/meditative-music/depressed_love.mp3",
+    "duration": 371,
+    "bestFor": ["depressed"],
+    "target": ["love"]
+  },
+  "depressed_peaceful": {
+    "file": "gs://hackathon-asset-genai/meditative-music/depressed_peaceful.mp3",
+    "duration": 321,
+    "bestFor": ["depressed"],
+    "target": ["peaceful"]
+  },
+  "depressed_gratitude": {
+    "file": "gs://hackathon-asset-genai/meditative-music/depressed_gratitude.mp3",
+    "duration": 224,
+    "bestFor": ["depressed"],
+    "target": ["gratitude"]
+  },
+  "depressed_acceptance": {
+    "file": "gs://hackathon-asset-genai/meditative-music/depressed_acceptance.mp3",
+    "duration": 211,
+    "bestFor": ["depressed"],
+    "target": ["acceptance"]
+  }
+}

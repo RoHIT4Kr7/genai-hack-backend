@@ -9,9 +9,8 @@ import asyncio
 import os
 from typing import Dict, Any, List
 from loguru import logger
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage
 
+from google import genai
 from config.settings import settings
 from services.gcs_storage_service import gcs_storage_service as storage_service
 from services.chirp3hd_audio_service import chirp3hd_audio_service as audio_service
@@ -37,16 +36,13 @@ class NanoBananaWorkflowNode:
         try:
             # Configure for Google AI Studio (nano-banana)
             os.environ.pop("GOOGLE_GENAI_USE_VERTEXAI", None)
-            os.environ["GOOGLE_API_KEY"] = self.gemini_api_key
 
-            self.image_client = ChatGoogleGenerativeAI(
-                model="gemini-2.5-flash-image-preview",
-                google_api_key=self.gemini_api_key,
-                temperature=0.7,
-                max_output_tokens=4096,
+            # Initialize direct GenAI SDK client (more reliable for images)
+            self.image_client = genai.Client(api_key=self.gemini_api_key)
+
+            logger.info(
+                "✅ Nano-banana workflow node initialized with direct GenAI SDK"
             )
-
-            logger.info("✅ Nano-banana workflow node initialized")
 
         except Exception as e:
             logger.error(f"Failed to initialize nano-banana workflow node: {e}")
@@ -196,11 +192,12 @@ class NanoBananaWorkflowNode:
                 f"Generating reference image with nano-banana for story {story_id}"
             )
 
-            message = HumanMessage(content=[{"type": "text", "text": reference_prompt}])
-
             response = await exponential_backoff_async(
-                self.image_client.ainvoke,
-                [message],
+                lambda: asyncio.to_thread(
+                    self.image_client.models.generate_content,
+                    model="gemini-2.5-flash-image-preview",
+                    contents=[reference_prompt],
+                ),
                 max_retries=5,
                 initial_delay=1.0,
                 max_delay=30.0,
@@ -295,11 +292,12 @@ This reference will be used by nano-banana to generate consistent character appe
                 panel_data, panel_number, reference_urls
             )
 
-            message = HumanMessage(content=[{"type": "text", "text": panel_prompt}])
-
             response = await exponential_backoff_async(
-                self.image_client.ainvoke,
-                [message],
+                lambda: asyncio.to_thread(
+                    self.image_client.models.generate_content,
+                    model="gemini-2.5-flash-image-preview",
+                    contents=[panel_prompt],
+                ),
                 max_retries=5,
                 initial_delay=1.0,
                 max_delay=30.0,
@@ -432,23 +430,36 @@ Create a compelling visual that captures this story moment while maintaining per
         return age_mapping.get(age_range, 25)
 
     def _extract_image_from_response(self, response) -> bytes:
-        """Extract image data from nano-banana response."""
+        """Extract image data from direct GenAI SDK response."""
         try:
             logger.info(f"Nano-banana response type: {type(response)}")
 
-            # Check for image data in nano-banana response
-            if hasattr(response, "content"):
-                if isinstance(response.content, str):
-                    logger.info(
-                        f"Nano-banana response text: {response.content[:200]}..."
-                    )
-                    # For now, create placeholder since we're getting text responses
-                    return self._create_placeholder_image_data()
+            # Handle direct GenAI SDK response format
+            if hasattr(response, "candidates") and response.candidates:
+                candidate = response.candidates[0]
+                if hasattr(candidate, "content") and hasattr(
+                    candidate.content, "parts"
+                ):
+                    for part in candidate.content.parts:
+                        if part.inline_data is not None:
+                            logger.info(
+                                f"✅ Found image data: {len(part.inline_data.data)} bytes"
+                            )
+                            return part.inline_data.data
+                        elif part.text is not None:
+                            logger.info(f"Found text part: {part.text[:100]}...")
 
-            # If no image found, create placeholder
+            # If no image found, log the response structure for debugging
             logger.warning(
-                "No image data found in nano-banana response, creating placeholder"
+                f"No image found in response. Response type: {type(response)}"
             )
+            if hasattr(response, "candidates"):
+                logger.warning(
+                    f"Candidates count: {len(response.candidates) if response.candidates else 0}"
+                )
+
+            # Fallback: create placeholder
+            logger.warning("Using placeholder image data")
             return self._create_placeholder_image_data()
 
         except Exception as e:

@@ -27,6 +27,7 @@ from utils.retry_helpers import exponential_backoff_async
 from services.nano_banana_service import nano_banana_service
 from services.chirp3hd_tts_service import chirp3hd_tts_service as audio_service
 from services.streaming_parser import StreamingStoryGenerator
+from services.gcs_storage_service import gcs_storage_service as storage_service
 
 
 class StoryService:
@@ -219,6 +220,23 @@ class StoryService:
         try:
             panels = []
 
+            # Prefer robust extraction used by streaming pipeline
+            try:
+                from services.dialogue_extractor import dialogue_extractor
+
+                raw_dialogues = dialogue_extractor.extract_all_panels_robust(response)
+                dialogues = dialogue_extractor.validate_and_enhance_dialogue(
+                    raw_dialogues, inputs
+                )
+                logger.info(
+                    f"Robust dialogue extractor found {len([k for k,v in raw_dialogues.items() if v])} panels; after validation we have 6 panels"
+                )
+            except Exception as ex:
+                logger.warning(
+                    f"Robust dialogue extraction failed with error: {ex}; falling back to regex parser"
+                )
+                dialogues = {}
+
             # Extract character sheet
             character_match = re.search(
                 r"CHARACTER_SHEET:\s*({.*?})", response, re.DOTALL
@@ -235,20 +253,50 @@ class StoryService:
             style_match = re.search(r"STYLE_GUIDE:\s*({.*?})", response, re.DOTALL)
             style_guide = json.loads(style_match.group(1)) if style_match else {}
 
-            # Extract each panel dialogue text
+            # Extract each panel dialogue text using robust extractor first, then regex patterns as backup
             for i in range(1, 7):
-                panel_pattern = rf'PANEL_{i}:\s*dialogue_text:\s*"([^"]*)"'
-                panel_match = re.search(panel_pattern, response, re.DOTALL)
+                dialogue_text = None
 
-                if panel_match:
+                # Use robust extractor result if available
+                if isinstance(dialogues, dict) and i in dialogues:
+                    dialogue_text = dialogues[i]
+
+                # If still missing, try regex patterns as backup
+                if not dialogue_text:
+                    dialogue_patterns = [
+                        rf'PANEL_{i}:\s*dialogue_text:\s*"([^"]*)"',  # With quotes
+                        rf"PANEL_{i}:\s*dialogue_text:\s*([^\n]+)",  # Without quotes, until newline
+                        rf'PANEL_{i}:[^:]*dialogue_text[:\s]*"([^"]*)"',  # Flexible format with quotes
+                        rf"PANEL_{i}:[^:]*dialogue_text[:\s]*([^\n]+)",  # Flexible format without quotes
+                        rf'Panel\s*{i}[^:]*dialogue_text[:\s]*"([^"]*)"',  # Case insensitive panel
+                        rf"Panel\s*{i}[^:]*dialogue_text[:\s]*([^\n]+)",  # Case insensitive without quotes
+                        rf"Panel\s*{i}:\s*'([^']*)'",  # Panel X: 'content' format (single quotes)
+                        rf'Panel\s*{i}:\s*"([^"]*)"',  # Panel X: "content" format (double quotes)
+                        rf"Panel\s*{i}:\s*([^'\"]+(?:'[^']*'[^'\"]*)*)",  # Panel X: mixed content with quotes
+                    ]
+
+                    for pattern in dialogue_patterns:
+                        panel_match = re.search(
+                            pattern, response, re.DOTALL | re.IGNORECASE
+                        )
+                        if panel_match:
+                            candidate = panel_match.group(1).strip()
+                            if candidate and len(candidate) > 10:
+                                dialogue_text = candidate
+                                logger.info(
+                                    f"Panel {i} dialogue extracted with backup pattern"
+                                )
+                                break
+
+                if dialogue_text:
                     panel_data = {
                         "panel_number": i,
                         "character_sheet": character_sheet,
                         "prop_sheet": prop_sheet,
                         "style_guide": style_guide,
-                        "dialogue_text": panel_match.group(1),
+                        "dialogue_text": dialogue_text,
                         "emotional_tone": self._determine_emotional_tone(
-                            i, panel_match.group(1)
+                            i, dialogue_text
                         ),
                         "user_mood": inputs.mood if inputs else "neutral",
                         "user_vibe": (
@@ -257,14 +305,22 @@ class StoryService:
                     }
                     panels.append(panel_data)
                 else:
-                    # Fallback if parsing fails
+                    # Enhanced fallback with meaningful content based on user inputs
+                    logger.warning(
+                        f"Failed to extract dialogue for panel {i} even after robust parsing, using enhanced fallback"
+                    )
+                    fallback_dialogue = self._generate_meaningful_panel_dialogue(
+                        i, inputs
+                    )
                     panel_data = {
                         "panel_number": i,
                         "character_sheet": character_sheet,
                         "prop_sheet": prop_sheet,
                         "style_guide": style_guide,
-                        "dialogue_text": f"Panel {i} dialogue",
-                        "emotional_tone": "neutral",
+                        "dialogue_text": fallback_dialogue,
+                        "emotional_tone": self._determine_emotional_tone(
+                            i, fallback_dialogue
+                        ),
                         "user_mood": inputs.mood if inputs else "neutral",
                         "user_vibe": (
                             getattr(inputs, "vibe", "calm") if inputs else "calm"
@@ -278,6 +334,36 @@ class StoryService:
             logger.error(f"Failed to parse Story Architect response: {e}")
             # Return fallback panels with user context
             return self._create_fallback_panels(inputs)
+
+    def _generate_meaningful_panel_dialogue(
+        self, panel_number: int, inputs: StoryInputs
+    ) -> str:
+        """Generate meaningful dialogue for a specific panel based on user inputs."""
+        name = inputs.nickname if inputs else "our hero"
+        dream = (
+            getattr(inputs, "dream", None) or inputs.desiredOutcome
+            if inputs
+            else "their goals"
+        )
+        mood = inputs.mood if inputs else "uncertain"
+        inner_struggle = inputs.innerDemon if inputs else "challenges"
+        secret_weapon = inputs.secretWeapon if inputs else "inner strength"
+        support_system = inputs.supportSystem if inputs else "friends and family"
+
+        # Create meaningful 6-panel emotional journey
+        dialogue_map = {
+            1: f"Meet {name}. Today they're feeling {mood}, but inside burns a powerful desire to {dream}. Every meaningful journey begins with acknowledging where we are and where we want to go.",
+            2: f"{name} faces their greatest challenge: {inner_struggle}. The path to {dream} isn't easy, but they've come too far to give up. Sometimes our biggest obstacles are the stepping stones to our greatest growth.",
+            3: f"Taking a deep breath, {name} reflects on their journey so far. Even feeling {mood} doesn't define who they are, it's just part of their human experience. In this quiet moment, clarity begins to emerge.",
+            4: f"Suddenly, {name} remembers their {secret_weapon}. This isn't just a skill, it's their unique gift to the world. With renewed understanding, they see how this strength can help them overcome {inner_struggle}.",
+            5: f"With determination rising, {name} takes action. They reach out to their {support_system} and use their {secret_weapon} to move toward {dream}. Each step forward builds their confidence.",
+            6: f"Looking ahead with hope, {name} realizes the journey continues, but they're no longer the same person. They've grown stronger, wiser, and more connected to their true purpose of achieving {dream}.",
+        }
+
+        return dialogue_map.get(
+            panel_number,
+            f"{name} continues their meaningful journey toward {dream}, growing stronger with each challenge they overcome.",
+        )
 
     def _combine_ai_responses(
         self, panels: List[Dict[str, Any]], image_prompts: List[str]

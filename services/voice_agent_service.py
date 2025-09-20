@@ -10,7 +10,7 @@ import io
 import traceback
 import pyaudio
 import numpy as np
-from typing import Optional, Callable, Dict, Any
+from typing import Optional, Callable, Dict, Any, List
 from loguru import logger
 from google import genai
 from google.genai import types
@@ -96,31 +96,29 @@ class VoiceAgentService:
                 raise ValueError("GEMINI_API_KEY environment variable is not set")
 
             # Create session with Gemini Live API with timeout and retry
-            session_context = client.aio.live.connect(
-                model=MODEL, 
-                config=VOICE_CONFIG
-            )
-            
+            session_context = client.aio.live.connect(model=MODEL, config=VOICE_CONFIG)
+
             # Add connection timeout
             session = await asyncio.wait_for(
-                session_context.__aenter__(), 
-                timeout=15.0  # Reduced timeout
+                session_context.__aenter__(), timeout=15.0  # Reduced timeout
             )
 
             # Initialize queues for this session
-            audio_in_queue = asyncio.Queue(maxsize=100)  # Increased queue size to prevent audio drops
+            audio_in_queue = asyncio.Queue(
+                maxsize=100
+            )  # Increased queue size to prevent audio drops
             out_queue = asyncio.Queue(maxsize=50)  # Increased for better buffering
 
             # Store session data
             self.active_sessions[session_id] = {
-                'session': session,
-                'session_context': session_context,
-                'audio_in_queue': audio_in_queue,
-                'out_queue': out_queue,
-                'audio_stream': None,
-                'is_running': True,
-                'transcription_callback': transcription_callback,
-                'response_callback': response_callback
+                "session": session,
+                "session_context": session_context,
+                "audio_in_queue": audio_in_queue,
+                "out_queue": out_queue,
+                "audio_stream": None,
+                "is_running": True,
+                "transcription_callback": transcription_callback,
+                "response_callback": response_callback,
             }
 
             # Start session tasks
@@ -142,71 +140,77 @@ class VoiceAgentService:
     async def stop_session(self, session_id: str):
         """Stop a specific voice agent session."""
         try:
-            logger.info(f"🛑 EMERGENCY STOP: Stopping voice agent session: {session_id}")
+            logger.info(
+                f"🛑 EMERGENCY STOP: Stopping voice agent session: {session_id}"
+            )
 
             if session_id not in self.active_sessions:
                 logger.warning(f"Session {session_id} not found")
                 return
 
             session_data = self.active_sessions[session_id]
-            
+
             # IMMEDIATE STOP: Mark session as not running first
-            session_data['is_running'] = False
+            session_data["is_running"] = False
             logger.info(f"🔄 Marked session {session_id} as not running")
-            
+
             # IMMEDIATE: Clear audio queue to stop any pending audio
-            if session_data.get('audio_in_queue'):
+            if session_data.get("audio_in_queue"):
                 try:
-                    while not session_data['audio_in_queue'].empty():
+                    while not session_data["audio_in_queue"].empty():
                         try:
-                            session_data['audio_in_queue'].get_nowait()
+                            session_data["audio_in_queue"].get_nowait()
                         except:
                             break
                     logger.info(f"🔇 EMERGENCY: Audio queue cleared for {session_id}")
                 except Exception as queue_error:
                     logger.warning(f"Error clearing audio queue: {queue_error}")
-            
+
             # IMMEDIATE: Force close Gemini session to stop AI generation
-            if session_data.get('session'):
+            if session_data.get("session"):
                 try:
                     # Force terminate the Gemini session
-                    session_data['session'] = None
-                    logger.info(f"🤖 EMERGENCY: Gemini session terminated for {session_id}")
+                    session_data["session"] = None
+                    logger.info(
+                        f"🤖 EMERGENCY: Gemini session terminated for {session_id}"
+                    )
                 except Exception as gemini_error:
                     logger.warning(f"Error terminating Gemini session: {gemini_error}")
 
             # Cancel all session tasks
             if session_id in self.session_tasks:
                 tasks = self.session_tasks[session_id]
-                logger.info(f"🚫 Cancelling {len(tasks)} tasks for session {session_id}")
-                
+                logger.info(
+                    f"🚫 Cancelling {len(tasks)} tasks for session {session_id}"
+                )
+
                 for i, task in enumerate(tasks):
                     if not task.done():
                         task.cancel()
                         logger.debug(f"Cancelled task {i+1}/{len(tasks)}")
-                
+
                 # Wait for all tasks to complete cancellation
                 await asyncio.gather(*tasks, return_exceptions=True)
                 logger.info(f"✅ All tasks cancelled for session {session_id}")
-                
+
                 del self.session_tasks[session_id]
 
             # Close audio stream
-            if session_data.get('audio_stream'):
+            if session_data.get("audio_stream"):
                 try:
-                    session_data['audio_stream'].stop_stream()
-                    session_data['audio_stream'].close()
+                    session_data["audio_stream"].stop_stream()
+                    session_data["audio_stream"].close()
                     logger.info(f"🎧 Audio stream closed for {session_id}")
                 except Exception as audio_error:
                     logger.warning(f"Audio stream close error: {audio_error}")
 
             # Clear audio queue immediately to stop any pending audio
-            if session_data.get('audio_in_queue'):
+            if session_data.get("audio_in_queue"):
                 try:
                     # Clear all pending audio from queue
-                    while not session_data['audio_in_queue'].empty():
+                    while not session_data["audio_in_queue"].empty():
                         try:
-                            session_data['audio_in_queue'].get_nowait()
+                            session_data["audio_in_queue"].get_nowait()
                         except:
                             break
                     logger.info(f"🔇 Audio queue cleared for {session_id}")
@@ -214,9 +218,9 @@ class VoiceAgentService:
                     logger.warning(f"Error clearing audio queue: {queue_error}")
 
             # Close Gemini session
-            if session_data.get('session') and session_data.get('session_context'):
+            if session_data.get("session") and session_data.get("session_context"):
                 try:
-                    await session_data['session_context'].__aexit__(None, None, None)
+                    await session_data["session_context"].__aexit__(None, None, None)
                     logger.info(f"🤖 Gemini session closed for {session_id}")
                 except Exception as session_error:
                     logger.warning(f"Session cleanup warning: {session_error}")
@@ -365,10 +369,10 @@ class VoiceAgentService:
             if session_id not in self.active_sessions:
                 logger.error(f"Session {session_id} not found")
                 return False
-                
+
             session_data = self.active_sessions[session_id]
-            session = session_data.get('session')
-            
+            session = session_data.get("session")
+
             if session and message.strip():
                 await session.send(input=message, end_of_turn=True)
                 logger.info(f"📝 Sent text message to {session_id}: {message}")
@@ -406,7 +410,6 @@ class VoiceAgentService:
         finally:
             await self.stop_session()
 
-
     async def _start_session_tasks(self, session_id: str):
         """Start background tasks for a voice session."""
         try:
@@ -415,13 +418,13 @@ class VoiceAgentService:
                 asyncio.create_task(self._send_realtime(session_id)),
                 asyncio.create_task(self._listen_audio(session_id)),
                 asyncio.create_task(self._receive_audio(session_id)),
-                asyncio.create_task(self._play_audio(session_id))
+                asyncio.create_task(self._play_audio(session_id)),
             ]
-            
+
             # Store all tasks for this session
             self.session_tasks[session_id] = tasks
             logger.info(f"✅ Started {len(tasks)} tasks for session {session_id}")
-            
+
         except Exception as e:
             logger.error(f"Failed to start session tasks for {session_id}: {e}")
 
@@ -430,37 +433,44 @@ class VoiceAgentService:
         session_data = self.active_sessions.get(session_id)
         if not session_data:
             return
-            
+
         try:
-            while session_data['is_running']:
+            while session_data["is_running"]:
                 try:
-                    msg = await asyncio.wait_for(session_data['out_queue'].get(), timeout=1.0)
-                    if session_data['session'] and session_data['is_running']:
-                        await session_data['session'].send(input=msg)
+                    msg = await asyncio.wait_for(
+                        session_data["out_queue"].get(), timeout=1.0
+                    )
+                    if session_data["session"] and session_data["is_running"]:
+                        await session_data["session"].send(input=msg)
                 except asyncio.TimeoutError:
                     continue
                 except Exception as e:
                     error_msg = str(e)
-                    if session_data['is_running']:
+                    if session_data["is_running"]:
                         logger.warning(f"Send realtime error for {session_id}: {e}")
                         # Check for fatal errors
-                        if "1007" in error_msg or "1008" in error_msg or "invalid frame" in error_msg:
-                            logger.error(f"🚨 Fatal send error for {session_id}: {error_msg}")
-                            session_data['is_running'] = False
+                        if (
+                            "1007" in error_msg
+                            or "1008" in error_msg
+                            or "invalid frame" in error_msg
+                        ):
+                            logger.error(
+                                f"🚨 Fatal send error for {session_id}: {error_msg}"
+                            )
+                            session_data["is_running"] = False
                     break
         except Exception as e:
             logger.error(f"Send realtime failed for {session_id}: {e}")
         finally:
             if session_data:
-                session_data['is_running'] = False
-
+                session_data["is_running"] = False
 
     async def _listen_audio(self, session_id: str):
         """Listen to microphone input for a specific session."""
         session_data = self.active_sessions.get(session_id)
         if not session_data:
             return
-            
+
         try:
             mic_info = pya.get_default_input_device_info()
             audio_stream = await asyncio.to_thread(
@@ -472,20 +482,22 @@ class VoiceAgentService:
                 input_device_index=mic_info["index"],
                 frames_per_buffer=CHUNK_SIZE,
             )
-            session_data['audio_stream'] = audio_stream
+            session_data["audio_stream"] = audio_stream
 
             logger.info(f"🎧 Audio listening started for {session_id}")
             kwargs = {"exception_on_overflow": False}
-            
-            while session_data['is_running']:
+
+            while session_data["is_running"]:
                 try:
                     data = await asyncio.to_thread(
                         audio_stream.read, CHUNK_SIZE, **kwargs
                     )
-                    
-                    await session_data['out_queue'].put({"data": data, "mime_type": "audio/pcm"})
+
+                    await session_data["out_queue"].put(
+                        {"data": data, "mime_type": "audio/pcm"}
+                    )
                 except Exception as e:
-                    if session_data['is_running']:
+                    if session_data["is_running"]:
                         logger.warning(f"Audio read error for {session_id}: {e}")
                     break
 
@@ -497,46 +509,53 @@ class VoiceAgentService:
         session_data = self.active_sessions.get(session_id)
         if not session_data:
             return
-            
+
         try:
-            while session_data['is_running']:
+            while session_data["is_running"]:
                 # Check if session is still valid before processing
-                if not session_data.get('session'):
-                    logger.info(f"🛑 Gemini session terminated, stopping receive for {session_id}")
+                if not session_data.get("session"):
+                    logger.info(
+                        f"🛑 Gemini session terminated, stopping receive for {session_id}"
+                    )
                     break
-                    
+
                 try:
-                    turn = session_data['session'].receive()
+                    turn = session_data["session"].receive()
                     async for response in turn:
                         # Double-check session is still running
-                        if not session_data['is_running']:
-                            logger.info(f"🛑 Session stopped during response processing for {session_id}")
+                        if not session_data["is_running"]:
+                            logger.info(
+                                f"🛑 Session stopped during response processing for {session_id}"
+                            )
                             break
-                            
-                            
+
                         # Handle audio data
                         if data := response.data:
                             # Check if session is still running FIRST
-                            if not session_data['is_running']:
+                            if not session_data["is_running"]:
                                 break  # Exit immediately if stopped
-                            
+
                             # Only add audio if session is still running
-                            if session_data['is_running']:
+                            if session_data["is_running"]:
                                 try:
-                                    session_data['audio_in_queue'].put_nowait(data)
+                                    session_data["audio_in_queue"].put_nowait(data)
                                 except asyncio.QueueFull:
                                     # Log but don't block - allows immediate stop
-                                    logger.debug(f"Audio queue full for {session_id}, skipping chunk")
+                                    logger.debug(
+                                        f"Audio queue full for {session_id}, skipping chunk"
+                                    )
                             continue
-                            
+
                         # Handle text transcription
                         if text := response.text:
                             logger.info(f"🤖 AI Response: {text}")
-                            if session_data.get('response_callback') and session_data['is_running']:
-                                await session_data['response_callback'](text)
+                            if (
+                                session_data.get("response_callback")
+                                and session_data["is_running"]
+                            ):
+                                await session_data["response_callback"](text)
                             continue
-                            
-                            
+
                 except asyncio.TimeoutError:
                     continue
                 except asyncio.CancelledError:
@@ -545,13 +564,20 @@ class VoiceAgentService:
                 except Exception as e:
                     error_msg = str(e)
                     logger.warning(f"Receive audio error for {session_id}: {e}")
-                    
+
                     # Check for fatal WebSocket errors
-                    if "1007" in error_msg or "1008" in error_msg or "invalid frame" in error_msg or "policy violation" in error_msg:
-                        logger.error(f"🚨 Fatal Gemini API error for {session_id}: {error_msg}")
-                        session_data['is_running'] = False
+                    if (
+                        "1007" in error_msg
+                        or "1008" in error_msg
+                        or "invalid frame" in error_msg
+                        or "policy violation" in error_msg
+                    ):
+                        logger.error(
+                            f"🚨 Fatal Gemini API error for {session_id}: {error_msg}"
+                        )
+                        session_data["is_running"] = False
                         break
-                    
+
                     # For other errors, wait briefly and continue
                     await asyncio.sleep(0.1)
                     continue
@@ -563,7 +589,7 @@ class VoiceAgentService:
         finally:
             # Ensure session is marked as not running if we exit the loop
             if session_data:
-                session_data['is_running'] = False
+                session_data["is_running"] = False
                 logger.info(f"🛑 Receive audio task ended for {session_id}")
 
     async def _play_audio(self, session_id: str):
@@ -571,7 +597,7 @@ class VoiceAgentService:
         session_data = self.active_sessions.get(session_id)
         if not session_data:
             return
-            
+
         stream = None
         try:
             stream = await asyncio.to_thread(
@@ -584,32 +610,36 @@ class VoiceAgentService:
 
             logger.info(f"🔊 Audio playback started for {session_id}")
 
-            while session_data['is_running']:
+            while session_data["is_running"]:
                 try:
                     # Use short timeout for immediate stop response
                     bytestream = await asyncio.wait_for(
-                        session_data['audio_in_queue'].get(), timeout=0.5
+                        session_data["audio_in_queue"].get(), timeout=0.5
                     )
                     # Double-check if session is still running before playing
-                    if not session_data['is_running']:
-                        logger.info(f"🛑 Audio playback stopped mid-stream for {session_id}")
+                    if not session_data["is_running"]:
+                        logger.info(
+                            f"🛑 Audio playback stopped mid-stream for {session_id}"
+                        )
                         break
-                    
+
                     # Play audio chunk
                     await asyncio.to_thread(stream.write, bytestream)
-                    
+
                 except asyncio.TimeoutError:
                     continue
                 except asyncio.CancelledError:
                     logger.info(f"🛑 Audio playback task cancelled for {session_id}")
                     break
                 except Exception as e:
-                    if session_data['is_running']:
+                    if session_data["is_running"]:
                         logger.warning(f"Audio playback error for {session_id}: {e}")
                     break
 
         except asyncio.CancelledError:
-            logger.info(f"🛑 Audio playback task cancelled during setup for {session_id}")
+            logger.info(
+                f"🛑 Audio playback task cancelled during setup for {session_id}"
+            )
         except Exception as e:
             logger.error(f"Audio playback failed for {session_id}: {e}")
         finally:

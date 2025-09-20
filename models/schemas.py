@@ -40,9 +40,9 @@ class StoryInputs(BaseModel):
         ...,
         min_length=1,
         max_length=20,
-        description="Age range (teen, young-adult, adult, mature, senior, not-specified)",
+        description="Age range (teen, young-adult, adult)",
     )
-    gender: Literal["female", "male", "non-binary", "not-specified"]
+    gender: Literal["female", "male"]
 
     # Legacy fields (keeping for backward compatibility but making optional)
     vibe: Optional[
@@ -99,18 +99,20 @@ class StoryInputs(BaseModel):
     def validate_age(cls, v) -> str:
         """Convert age from number to string and map to age ranges."""
         if isinstance(v, int):
-            # Map numeric age to age ranges
+            # Map numeric age to allowed age ranges
             if v < 18:
                 return "teen"
             elif v < 26:
                 return "young-adult"
-            elif v < 36:
+            else:  # 26-35 and above
                 return "adult"
-            elif v < 51:
-                return "mature"
-            else:
-                return "senior"
-        return str(v) if v else "young-adult"
+
+        # Validate string values
+        if isinstance(v, str) and v in ["teen", "young-adult", "adult"]:
+            return v
+
+        # Default fallback
+        return "young-adult"
 
     @model_validator(mode="before")
     @classmethod
@@ -129,6 +131,91 @@ class StoryInputs(BaseModel):
                 values["desiredOutcome"] = ""
 
         return values
+
+    @field_validator("vibe", mode="before")
+    @classmethod
+    def normalize_vibe(cls, v):
+        """Coerce free-text or synonymous 'vibe' values to allowed literals.
+
+        Accepts variations like "feeling confident" -> "motivational" and
+        gracefully defaults to a safe choice when unrecognized.
+        """
+        if v is None:
+            return None
+        try:
+            s = str(v).strip().lower()
+        except Exception:
+            return None
+
+        if not s:
+            return None
+
+        # Already valid
+        allowed = {
+            "calm",
+            "adventure",
+            "musical",
+            "motivational",
+            "slice-of-life",
+            "shonen",
+            "isekai",
+            "fantasy",
+        }
+        if s in allowed:
+            return s
+
+        # Map common synonyms/phrases
+        if any(
+            k in s
+            for k in [
+                "confident",
+                "confidence",
+                "strong",
+                "motivated",
+                "inspired",
+                "empowered",
+            ]
+        ):
+            return "motivational"
+        if any(
+            k in s
+            for k in ["calm", "peace", "peaceful", "relaxed", "serene", "tranquil"]
+        ):
+            return "calm"
+        if any(
+            k in s
+            for k in [
+                "adventure",
+                "adventurous",
+                "explore",
+                "journey",
+                "quest",
+                "travel",
+            ]
+        ):
+            return "adventure"
+        if any(
+            k in s for k in ["music", "musical", "melody", "song", "sing", "rhythm"]
+        ):
+            return "musical"
+        if any(
+            k in s
+            for k in ["slice of life", "slice-of-life", "daily", "everyday", "simple"]
+        ):
+            return "slice-of-life"
+        if any(k in s for k in ["shonen", "battle", "fight", "action", "training"]):
+            return "shonen"
+        if any(
+            k in s for k in ["isekai", "other world", "reincarnat", "reborn", "portal"]
+        ):
+            return "isekai"
+        if any(
+            k in s for k in ["fantasy", "magical", "magic", "myth", "dragon", "sorcer"]
+        ):
+            return "fantasy"
+
+        # Fallback safe default
+        return "motivational"
 
 
 class CharacterSheet(BaseModel):
@@ -162,8 +249,19 @@ class PanelData(BaseModel):
     style_guide: StyleGuide
     dialogue_text: str
     image_prompt: str
-    music_prompt: str
+    # music_prompt is optional because current pipeline uses static background music
+    music_prompt: Optional[str] = ""
     emotional_tone: str
+    # Optional fields produced by services during assembly
+    music_url: Optional[str] = None
+    tts_text: Optional[str] = None
+    # URLs for frontend compatibility (added after workflow completion)
+    image_url: Optional[str] = None
+    tts_url: Optional[str] = None
+    imageUrl: Optional[str] = None  # camelCase for frontend
+    narrationUrl: Optional[str] = None  # camelCase for frontend
+    backgroundMusicUrl: Optional[str] = None  # camelCase for frontend
+    id: Optional[str] = None  # Panel ID for frontend
 
 
 class GeneratedStory(BaseModel):
@@ -190,3 +288,80 @@ class HealthResponse(BaseModel):
     status: str
     timestamp: datetime
     services: Dict[str, str]
+
+
+# Meditation/Dhyaan Models
+class MeditationInputs(BaseModel):
+    currentFeeling: str = Field(
+        ...,
+        min_length=1,
+        max_length=50,
+        description="User's current emotional state (sad, upset, anxious, fearful, lonely, guilty, depressed)",
+    )
+    desiredFeeling: str = Field(
+        ...,
+        min_length=1,
+        max_length=50,
+        description="What they want to feel (joy, love, peaceful, gratitude, acceptance)",
+    )
+    experience: str = Field(
+        ...,
+        min_length=1,
+        max_length=20,
+        description="Meditation experience level (beginner, intermediate, advanced)",
+    )
+
+    @field_validator("currentFeeling")
+    @classmethod
+    def validate_current_feeling(cls, v):
+        allowed_feelings = [
+            "sad",
+            "upset",
+            "anxious",
+            "fearful",
+            "lonely",
+            "guilty",
+            "depressed",
+        ]
+        if v.lower() not in allowed_feelings:
+            raise ValueError(
+                f'currentFeeling must be one of: {", ".join(allowed_feelings)}'
+            )
+        return v.lower()
+
+    @field_validator("desiredFeeling")
+    @classmethod
+    def validate_desired_feeling(cls, v):
+        allowed_feelings = ["joy", "love", "peaceful", "gratitude", "acceptance"]
+        if v.lower() not in allowed_feelings:
+            raise ValueError(
+                f'desiredFeeling must be one of: {", ".join(allowed_feelings)}'
+            )
+        return v.lower()
+
+    @field_validator("experience")
+    @classmethod
+    def validate_experience(cls, v):
+        allowed_levels = ["beginner", "intermediate", "advanced"]
+        if v.lower() not in allowed_levels:
+            raise ValueError(f'experience must be one of: {", ".join(allowed_levels)}')
+        return v.lower()
+
+
+class MeditationRequest(BaseModel):
+    inputs: MeditationInputs
+
+
+class MeditationResponse(BaseModel):
+    meditation_id: str = Field(..., description="Unique meditation session ID")
+    title: str = Field(..., description="Generated meditation title")
+    duration: int = Field(..., description="Meditation duration in seconds")
+    audio_url: str = Field(..., description="Signed URL for generated meditation audio")
+    script: str = Field(..., description="Generated meditation script text")
+    background_music_url: str = Field(
+        ..., description="Signed URL for background music"
+    )
+    guidance_type: str = Field(
+        ..., description="Type of meditation guidance (breathing, body_scan, etc.)"
+    )
+    created_at: str = Field(..., description="ISO timestamp of creation")
