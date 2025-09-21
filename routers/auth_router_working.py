@@ -245,25 +245,6 @@ def debug_auth_config():
     }
 
 
-@router.get("/debug/jwt")
-def debug_jwt_config():
-    """Debug JWT configuration - shows JWT secret info without exposing the secret"""
-    jwt_secret = settings.jwt_secret_key
-    return {
-        "jwt_secret_configured": bool(jwt_secret),
-        "jwt_secret_length": len(jwt_secret) if jwt_secret else 0,
-        "jwt_secret_preview": (
-            f"{jwt_secret[:8]}...{jwt_secret[-8:]}"
-            if jwt_secret and len(jwt_secret) > 16
-            else "SHORT_SECRET"
-        ),
-        "jwt_algorithm": settings.jwt_algorithm,
-        "jwt_expires_minutes": settings.jwt_expires_minutes,
-        "revision": "manga-wellness-backend-00012-6kd",
-        "timestamp": datetime.utcnow().isoformat(),
-    }
-
-
 @router.get("/me", response_model=AuthUser)
 def get_me(current_user: User = Depends(get_current_user)):
     """Get current user profile"""

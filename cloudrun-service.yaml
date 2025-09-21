@@ -1,0 +1,58 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: manga-wellness-backend
+  annotations:
+    run.googleapis.com/ingress: all
+    run.googleapis.com/execution-environment: gen2
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/cpu-throttling: "false"
+        run.googleapis.com/memory: "2Gi"
+        run.googleapis.com/cpu: "2"
+        autoscaling.knative.dev/maxScale: "10"
+        autoscaling.knative.dev/minScale: "0"
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 3600
+      containers:
+      - image: gcr.io/hackathon-472205/manga-wellness-backend
+        ports:
+        - containerPort: 8080
+        env:
+        - name: VERTEX_AI_PROJECT_ID
+          value: "hackathon-472205"
+        - name: VERTEX_AI_LOCATION
+          value: "us-central1"
+        - name: GCS_BUCKET_NAME
+          value: "hackathon-asset-genai"
+        - name: IMAGEN_SEED
+          value: "42"
+        - name: JWT_ALGORITHM
+          value: "HS256"
+        - name: JWT_EXPIRES_MIN
+          value: "10080"
+        resources:
+          limits:
+            cpu: "2"
+            memory: "2Gi"
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 0
+          timeoutSeconds: 1
+          periodSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 0
+          timeoutSeconds: 1
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3

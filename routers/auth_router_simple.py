@@ -1,20 +1,24 @@
-"""
-Auth router with JWT verification using jose library only.
-This version eliminates the cryptography dependency that was causing import issues.
-"""
-
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime, timedelta
+import json
+import base64
+import requests as http_requests
 import os
 
 from jose import jwt
+
+from config.settings import settings
+
+from jose import jwt
+
 from config.settings import settings
 from models.db import get_db
 from models.user import User
 from utils.auth import get_current_user
+
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -48,65 +52,110 @@ def create_access_token(subject: str, expires_delta: Optional[timedelta] = None)
     return encoded_jwt
 
 
-def simple_google_token_verification(token: str, expected_client_id: str) -> dict:
+def manual_google_token_verification(token: str, expected_client_ids: list) -> dict:
     """
-    Simplified Google ID token verification using jose library without cryptographic verification.
-    This bypasses Google's strict audience validation and CRLF issues.
+    Completely custom Google ID token verification that bypasses Google's library entirely.
+    This eliminates all CRLF/whitespace issues by manually validating the JWT.
     """
-    print(f"[SIMPLE AUTH] Starting token verification")
-    print(f"[SIMPLE AUTH] Expected client ID: {expected_client_id[:20]}...")
+    print(f"[CUSTOM AUTH] Starting manual token verification")
+    print(
+        f"[CUSTOM AUTH] Expected client IDs: {[id[:20]+'...' for id in expected_client_ids]}"
+    )
 
     try:
-        # Decode without signature verification to bypass crypto dependency issues
-        payload = jwt.decode(
-            token,
-            # Use a dummy key since we're not verifying signature
-            "dummy-key",
-            options={
-                "verify_signature": False,  # Disable signature verification
-                "verify_aud": False,  # Disable audience verification initially
-                "verify_exp": False,  # We'll check expiry manually
-                "verify_iss": False,  # We'll check issuer manually
-            },
-        )
-        print(f"[SIMPLE AUTH] Token decoded successfully")
+        # Step 1: Decode JWT header without verification to get kid
+        unverified_header = pyjwt.get_unverified_header(token)
+        kid = unverified_header.get("kid")
+        alg = unverified_header.get("alg", "RS256")
 
-        # Manual validations
+        print(f"[CUSTOM AUTH] Token algorithm: {alg}, key ID: {kid}")
+
+        if alg != "RS256":
+            raise ValueError(f"Unsupported algorithm: {alg}")
+
+        # Step 2: Get Google's public keys
+        print(f"[CUSTOM AUTH] Fetching Google public keys...")
+        certs_url = "https://www.googleapis.com/oauth2/v1/certs"
+        response = http_requests.get(certs_url, timeout=30)
+        response.raise_for_status()
+        certs = response.json()
+
+        if kid not in certs:
+            raise ValueError(f"Key ID {kid} not found in Google certificates")
+
+        # Step 3: Load the public key and verify signature
+        print(f"[CUSTOM AUTH] Loading public key for kid: {kid}")
+        public_key_pem = certs[kid].encode("utf-8")
+        public_key = load_pem_public_key(public_key_pem)
+
+        # Step 4: Decode and verify the token
+        print(f"[CUSTOM AUTH] Verifying token signature...")
+        payload = pyjwt.decode(
+            token,
+            public_key,
+            algorithms=["RS256"],
+            options={"verify_aud": False},  # We'll verify audience manually
+        )
+
+        print(f"[CUSTOM AUTH] Token signature verified successfully")
+
+        # Step 5: Manual validation of claims
         current_time = int(datetime.utcnow().timestamp())
 
         # Check expiry
         exp = payload.get("exp", 0)
         if current_time >= exp:
-            print(f"[SIMPLE AUTH] Token expired: {current_time} >= {exp}")
+            print(f"[CUSTOM AUTH] Token expired: {current_time} >= {exp}")
             raise ValueError("Token has expired")
+
+        # Check not before (optional)
+        nbf = payload.get("nbf")
+        if nbf and current_time < nbf:
+            print(f"[CUSTOM AUTH] Token not yet valid: {current_time} < {nbf}")
+            raise ValueError("Token not yet valid")
 
         # Check issuer
         iss = payload.get("iss", "")
-        if iss not in ["accounts.google.com", "https://accounts.google.com"]:
-            print(f"[SIMPLE AUTH] Invalid issuer: {iss}")
+        valid_issuers = ["accounts.google.com", "https://accounts.google.com"]
+        if iss not in valid_issuers:
+            print(f"[CUSTOM AUTH] Invalid issuer: {iss}")
             raise ValueError(f"Invalid issuer: {iss}")
 
-        # Check audience (sanitized comparison)
+        # Check audience (manual, sanitized comparison)
         token_aud = payload.get("aud", "").strip()
-        clean_expected = expected_client_id.strip()
+        print(f"[CUSTOM AUTH] Token audience: '{token_aud}'")
 
-        print(f"[SIMPLE AUTH] Token audience: '{token_aud}'")
-        print(f"[SIMPLE AUTH] Expected audience: '{clean_expected}'")
+        # Sanitize all expected client IDs
+        sanitized_expected = [cid.strip() for cid in expected_client_ids if cid]
+        print(
+            f"[CUSTOM AUTH] Sanitized expected audiences: {[id[:20]+'...' for id in sanitized_expected]}"
+        )
 
-        if token_aud != clean_expected:
-            print(f"[SIMPLE AUTH] Audience mismatch")
+        audience_match = False
+        for expected_id in sanitized_expected:
+            if token_aud == expected_id:
+                print(f"[CUSTOM AUTH] Audience match found: {expected_id[:20]}...")
+                audience_match = True
+                break
+
+        if not audience_match:
+            print(f"[CUSTOM AUTH] No audience match found")
+            print(f"[CUSTOM AUTH] Token audience: '{token_aud}'")
+            print(f"[CUSTOM AUTH] Expected one of: {sanitized_expected}")
             raise ValueError(f"Invalid audience: {token_aud}")
 
         # Check essential claims
-        email = payload.get("email")
-        if not email:
+        if not payload.get("email"):
             raise ValueError("Email not present in token")
 
-        print(f"[SIMPLE AUTH] All validations passed for email: {email}")
+        if not payload.get("email_verified", False):
+            print(f"[CUSTOM AUTH] Warning: Email not verified")
+
+        print(f"[CUSTOM AUTH] All validations passed for email: {payload.get('email')}")
         return payload
 
     except Exception as e:
-        print(f"[SIMPLE AUTH] Verification failed: {str(e)}")
+        print(f"[CUSTOM AUTH] Manual verification failed: {str(e)}")
         raise e
 
 
@@ -115,21 +164,9 @@ def auth_ping():
     """Canary endpoint to prove which revision is serving traffic"""
     revision = os.getenv("K_REVISION", "unknown")
     return {
-        "status": "success",
-        "auth_implementation": "jose_verification_v1",
+        "auth_impl": "manual_v1",
         "revision": revision,
-        "code_path": "simple_google_token_verification",
-        "timestamp": datetime.utcnow().isoformat(),
-        "message": "JWT_VERIFICATION_ACTIVE_2025_09_22",
-    }
-
-
-@router.get("/test")
-def auth_test():
-    """Test endpoint for basic functionality"""
-    return {
-        "status": "working",
-        "implementation": "jose_jwt_verification",
+        "code_path": "manual_google_token_verification",
         "timestamp": datetime.utcnow().isoformat(),
     }
 
@@ -138,7 +175,6 @@ def auth_test():
 def google_sign_in(
     payload: GoogleAuthRequest, response: Response, db: Session = Depends(get_db)
 ):
-    """Google OAuth authentication with custom JWT verification"""
     print(f"[AUTH START] Google sign-in attempt started")
 
     if not payload.credential:
@@ -153,17 +189,27 @@ def google_sign_in(
                 detail="GOOGLE_CLIENT_ID is not configured on the server",
             )
 
-        # Clean the client ID
+        # Clean the client ID and create list of candidates
         clean_client_id = settings.google_client_id.strip()
+        candidate_client_ids = [clean_client_id]
 
-        # Debug logging
-        print(f"[AUTH DEBUG] Client ID length: {len(clean_client_id)}")
+        # Debug logging for client ID
+        print(f"[AUTH DEBUG] Raw client ID length: {len(settings.google_client_id)}")
+        print(
+            f"[AUTH DEBUG] Clean client ID: '{clean_client_id[:20]}...{clean_client_id[-20:]}' (truncated)"
+        )
+        print(
+            f"[AUTH DEBUG] Client ID repr (first 50 chars): {repr(clean_client_id[:50])}"
+        )
         print(f"[AUTH DEBUG] Token length: {len(payload.credential)}")
-        print(f"[AUTH DEBUG] Starting SIMPLE token verification...")
+        print(f"[AUTH DEBUG] Token preview: {payload.credential[:50]}...")
 
-        # Use our simple verification to eliminate Google library issues
-        idinfo = simple_google_token_verification(payload.credential, clean_client_id)
-        print(f"[AUTH SUCCESS] Simple token verification completed")
+        print(f"[AUTH DEBUG] Starting CUSTOM token verification...")
+        # Use our completely custom verification to eliminate Google library issues
+        idinfo = manual_google_token_verification(
+            payload.credential, candidate_client_ids
+        )
+        print(f"[AUTH SUCCESS] Custom token verification completed")
 
         # Extract user info
         email = idinfo.get("email")
@@ -178,13 +224,17 @@ def google_sign_in(
         print(f"[AUTH DEBUG] User info extracted - email: {email}, name: {name}")
 
         # Upsert user
+        print(f"[AUTH DEBUG] Looking up user by email: {email}")
         user = db.query(User).filter(User.email == email).first()
         if user:
+            print(f"[AUTH DEBUG] Existing user found, updating profile")
+            # Update profile info if changed
             user.full_name = name or user.full_name
             user.profile_picture_url = picture or user.profile_picture_url
             if google_sub:
                 user.google_id = google_sub
         else:
+            print(f"[AUTH DEBUG] Creating new user")
             user = User(
                 email=email,
                 full_name=name,
@@ -194,15 +244,17 @@ def google_sign_in(
             db.add(user)
         db.commit()
         db.refresh(user)
+        print(f"[AUTH DEBUG] User upsert completed, user ID: {user.id}")
 
-        # Create session JWT
+        # Create our session JWT
+        print(f"[AUTH DEBUG] Creating session JWT for user ID: {user.id}")
         token = create_access_token(subject=str(user.id))
         print(f"[AUTH SUCCESS] Authentication completed successfully for {email}")
 
-        # Add headers to prove this revision is serving traffic
+        # Add hard-to-miss headers to prove this revision is serving traffic
         response.headers["X-Revision"] = os.getenv("K_REVISION", "unknown")
-        response.headers["X-Code-Path"] = "jose_verification_v1"
-        response.headers["X-Auth-Implementation"] = "simple_google_token_verification"
+        response.headers["X-Code-Path"] = "manual_v1_verification"
+        response.headers["X-Auth-Implementation"] = "manual_google_token_verification"
 
         return AuthResponse(
             token=token,
@@ -215,7 +267,7 @@ def google_sign_in(
         )
 
     except ValueError as e:
-        # Invalid token - this will show our simple error format
+        # Invalid token
         print(f"[AUTH] Invalid Google token verification error: {e}")
         raise HTTPException(status_code=401, detail=f"Invalid Google token: {e}")
     except Exception as e:
@@ -224,7 +276,7 @@ def google_sign_in(
 
 @router.get("/debug/config")
 def debug_auth_config():
-    """Debug endpoint to check authentication configuration"""
+    """Debug endpoint to check authentication configuration and detect CRLF contamination."""
     client_id = settings.google_client_id
     has_crlf = "\r" in client_id or "\n" in client_id
 
@@ -240,33 +292,14 @@ def debug_auth_config():
         "has_crlf_contamination": has_crlf,
         "cors_origins": settings.cors_origins_list,
         "jwt_algorithm": settings.jwt_algorithm,
-        "test_marker": "JOSE_JWT_CONFIG_WORKING",
-        "timestamp": datetime.utcnow().isoformat(),
-    }
-
-
-@router.get("/debug/jwt")
-def debug_jwt_config():
-    """Debug JWT configuration - shows JWT secret info without exposing the secret"""
-    jwt_secret = settings.jwt_secret_key
-    return {
-        "jwt_secret_configured": bool(jwt_secret),
-        "jwt_secret_length": len(jwt_secret) if jwt_secret else 0,
-        "jwt_secret_preview": (
-            f"{jwt_secret[:8]}...{jwt_secret[-8:]}"
-            if jwt_secret and len(jwt_secret) > 16
-            else "SHORT_SECRET"
+        "environment": (
+            "production" if "run.app" in os.getenv("GAE_SERVICE", "") else "development"
         ),
-        "jwt_algorithm": settings.jwt_algorithm,
-        "jwt_expires_minutes": settings.jwt_expires_minutes,
-        "revision": "manga-wellness-backend-00012-6kd",
-        "timestamp": datetime.utcnow().isoformat(),
     }
 
 
 @router.get("/me", response_model=AuthUser)
 def get_me(current_user: User = Depends(get_current_user)):
-    """Get current user profile"""
     return AuthUser(
         id=current_user.id,
         email=current_user.email,

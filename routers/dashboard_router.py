@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from typing import List, Dict, Any
 import json
 
@@ -15,7 +15,26 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
 def _date_only(dt: datetime) -> date:
+    """Convert datetime to date, handling both naive and timezone-aware datetimes"""
+    if dt is None:
+        return None
+    # If timezone-aware, convert to UTC first, then get date
+    if dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc).date()
+    # If naive, assume UTC
     return dt.date()
+
+
+def _safe_datetime_compare(dt: datetime, cutoff: datetime) -> bool:
+    """Safely compare datetimes, handling timezone differences"""
+    if dt is None:
+        return False
+    # Make both naive in UTC for comparison
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    if cutoff.tzinfo is not None:
+        cutoff = cutoff.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt >= cutoff
 
 
 def _mood_to_score(mood_str: str) -> int:
@@ -132,7 +151,7 @@ def get_dashboard_stats(
         recent_creations = recent_creations[:10]
 
         # Mood stats (last 30 days) - collect from all sources
-        cutoff = datetime.utcnow() - timedelta(days=30)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
 
         # Get mood data from dhyaan checkins
         checkins = (
@@ -161,12 +180,12 @@ def get_dashboard_stats(
             .all()
         )
 
-        # Combine all mood data by day
+        # Combine all mood data by day (filter again with safe comparison)
         by_day: Dict[date, List[Dict[str, Any]]] = {}
 
         # Add dhyaan checkin moods
         for c in checkins:
-            if not c.created_at:
+            if not c.created_at or not _safe_datetime_compare(c.created_at, cutoff):
                 continue
             d = _date_only(c.created_at)
             by_day.setdefault(d, []).append(
@@ -272,27 +291,27 @@ def get_dashboard_stats(
 
         # Consistency streak (consecutive days with any activity including mood tracking)
         # Build a set of dates with activity in last 60 days
-        cutoff2 = datetime.utcnow() - timedelta(days=60)
+        cutoff2 = datetime.now(timezone.utc) - timedelta(days=60)
         activity_dates: set[date] = set()
 
         # Add manga creation dates
         for r in manga_rows:
-            if r.created_at and r.created_at >= cutoff2:
+            if r.created_at and _safe_datetime_compare(r.created_at, cutoff2):
                 activity_dates.add(_date_only(r.created_at))
 
         # Add meditation dates
         for r in med_rows:
-            if r.created_at and r.created_at >= cutoff2:
+            if r.created_at and _safe_datetime_compare(r.created_at, cutoff2):
                 activity_dates.add(_date_only(r.created_at))
 
         # Add mood checkin dates
         for c in checkins:
-            if c.created_at and c.created_at >= cutoff2:
+            if c.created_at and _safe_datetime_compare(c.created_at, cutoff2):
                 activity_dates.add(_date_only(c.created_at))
 
         # Add voice session dates
         for r in voice_rows:
-            if r.started_at and r.started_at >= cutoff2:
+            if r.started_at and _safe_datetime_compare(r.started_at, cutoff2):
                 activity_dates.add(_date_only(r.started_at))
 
         # Also add dates from mood activities in the extended period
@@ -319,7 +338,7 @@ def get_dashboard_stats(
 
         # Count back from today until a gap is found
         streak = 0
-        cur = _date_only(datetime.utcnow())
+        cur = _date_only(datetime.now(timezone.utc))
         while cur in activity_dates:
             streak += 1
             cur = cur - timedelta(days=1)

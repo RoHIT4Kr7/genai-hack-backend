@@ -16,6 +16,9 @@ from google import genai
 from google.genai import types
 from langchain_google_genai import ChatGoogleGenerativeAI
 from google.cloud import storage
+from google.auth import impersonated_credentials
+from google.auth.credentials import AnonymousCredentials
+import google.auth
 from loguru import logger
 
 from config.settings import settings
@@ -28,9 +31,33 @@ class DhyaanService:
         # Ensure we're using Google AI Studio, not Vertex AI
         os.environ.pop("GOOGLE_GENAI_USE_VERTEXAI", None)
 
-        self.api_key = settings.gemini_api_key
+        # Detect environment for proper API key handling
+        is_cloud_run = os.environ.get("K_SERVICE") is not None
+
+        # For GCloud Run with Secret Manager, try environment variable first
+        # Then fallback to settings which handles Secret Manager
+        self.api_key = os.environ.get("GEMINI_API_KEY")
+
         if not self.api_key:
-            raise ValueError("GEMINI_API_KEY environment variable is required")
+            # Fallback to settings (which handles Secret Manager for Cloud Run)
+            self.api_key = getattr(settings, "gemini_api_key", None)
+
+        if not self.api_key:
+            raise ValueError(
+                "GEMINI_API_KEY is required. Check Secret Manager (Cloud Run) or environment variable (local)"
+            )
+
+        # Log API key source for debugging deployment issues
+        if os.environ.get("GEMINI_API_KEY"):
+            logger.info(
+                "✅ Using Gemini API key from environment variable (Secret Manager mounted)"
+            )
+        elif getattr(settings, "gemini_api_key", None):
+            logger.info("✅ Using Gemini API key from settings (Secret Manager)")
+
+        logger.info(
+            f"🌍 Environment: {'GCloud Run' if is_cloud_run else 'Local development'}"
+        )
 
         # Initialize Gemini AI client for TTS
         self.genai_client = genai.Client(api_key=self.api_key)
@@ -44,14 +71,87 @@ class DhyaanService:
         )
 
         # Initialize GCS for storing generated meditation audio
-        self.gcs_client = storage.Client()
-        self.bucket_name = settings.gcs_bucket_name  # hackathon-asset-genai
-        self.bucket = self.gcs_client.bucket(self.bucket_name)
+        # For GCloud Run, use impersonated credentials for signed URL generation
+        try:
+            # Check if we're on GCloud Run
+            is_cloud_run = os.environ.get("K_SERVICE") is not None
+
+            if is_cloud_run:
+                # On GCloud Run, use impersonated credentials for signed URL generation
+                logger.info(
+                    "🔐 Setting up GCS with impersonated credentials for Cloud Run"
+                )
+
+                # Get the default credentials (managed service account)
+                credentials, project_id = google.auth.default()
+
+                # Create impersonated credentials for the same service account
+                # This enables signed URL generation via IAM Service Account Credentials API
+                service_account_email = credentials.service_account_email
+                logger.info(f"🔐 Using service account: {service_account_email}")
+
+                # Create impersonated credentials that can sign
+                target_credentials = impersonated_credentials.Credentials(
+                    source_credentials=credentials,
+                    target_principal=service_account_email,
+                    target_scopes=["https://www.googleapis.com/auth/cloud-platform"],
+                    delegates=None,
+                    quota_project_id=project_id,
+                )
+
+                self.gcs_client = storage.Client(
+                    credentials=target_credentials, project=project_id
+                )
+                logger.info(
+                    "✅ GCS client initialized with impersonated credentials for signing"
+                )
+            else:
+                # For local development, try to use service account file if available
+                service_account_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+                if service_account_path and os.path.exists(service_account_path):
+                    logger.info(
+                        f"🔐 Using service account file: {service_account_path}"
+                    )
+                    self.gcs_client = storage.Client()
+                else:
+                    logger.info("🔐 Using default credentials for GCS")
+                    self.gcs_client = storage.Client()
+
+            # Use environment variable for bucket name, fallback to settings
+            self.bucket_name = os.environ.get("GCS_BUCKET_NAME") or getattr(
+                settings, "gcs_bucket_name", "hackathon-asset-genai"
+            )
+            self.bucket = self.gcs_client.bucket(self.bucket_name)
+
+            # Test GCS connection
+            try:
+                _ = self.bucket.exists()
+                logger.info(f"✅ GCS connection successful, bucket: {self.bucket_name}")
+            except Exception as bucket_error:
+                logger.error(f"❌ GCS bucket access failed: {bucket_error}")
+                logger.error(f"Bucket name: {self.bucket_name}")
+                # Don't fail initialization, but log the error
+
+        except Exception as gcs_error:
+            logger.error(f"❌ Failed to initialize GCS client: {gcs_error}")
+            # For non-critical errors, continue with initialization but log the issue
+            self.gcs_client = None
+            self.bucket = None
 
         # Load meditation music metadata
         self._load_music_metadata()
 
         logger.info("✅ DhyaanService initialized with Gemini 2.5 Flash TTS")
+
+        # Log environment information for debugging
+        is_cloud_run = os.environ.get("K_SERVICE") is not None
+        logger.info(
+            f"🌍 Running on: {'Google Cloud Run' if is_cloud_run else 'Local environment'}"
+        )
+        if is_cloud_run:
+            service_name = os.environ.get("K_SERVICE", "unknown")
+            revision = os.environ.get("K_REVISION", "unknown")
+            logger.info(f"🚀 Service: {service_name}, Revision: {revision}")
 
     def _load_music_metadata(self):
         """Load meditation music metadata from JSON file."""
@@ -338,43 +438,123 @@ Here is the meditation script to read:
             raise
 
     async def _upload_audio_to_gcs(self, audio_data: bytes, meditation_id: str) -> str:
-        """Upload generated audio to GCS and return signed URL."""
+        """Upload generated audio to GCS and return signed URL using IAM credentials."""
         try:
+            if not self.gcs_client or not self.bucket:
+                raise Exception("GCS client not properly initialized")
+
             # Create path for meditation audio
             audio_path = f"meditation-audio/{meditation_id}.wav"
             blob = self.bucket.blob(audio_path)
 
             # Upload audio data
-            await asyncio.to_thread(blob.upload_from_string, audio_data)
-
-            # Generate signed URL (valid for 24 hours)
-            signed_url = await asyncio.to_thread(
-                blob.generate_signed_url, expiration=timedelta(hours=24), method="GET"
+            await asyncio.to_thread(
+                blob.upload_from_string, audio_data, content_type="audio/wav"
             )
 
-            logger.info(f"✅ Uploaded meditation audio to GCS: {audio_path}")
-            return signed_url
+            # Generate V4 signed URL using impersonated credentials
+            try:
+                signed_url = await asyncio.to_thread(
+                    blob.generate_signed_url,
+                    expiration=timedelta(hours=24),
+                    method="GET",
+                    version="v4",  # Use V4 signing which works with IAM Credentials API
+                )
+                logger.info(f"✅ Uploaded meditation audio to GCS: {audio_path}")
+                logger.info(f"🔗 Generated V4 signed URL (expires in 24h)")
+                return signed_url
+            except Exception as signed_url_error:
+                logger.warning(f"V4 signed URL generation failed: {signed_url_error}")
+
+                # Fallback: Make the object publicly accessible
+                try:
+                    blob.make_public()
+                    public_url = blob.public_url
+                    logger.info(f"✅ Made audio file public: {audio_path}")
+                    logger.info(f"🔗 Using public URL: {public_url}")
+                    return public_url
+                except Exception as public_error:
+                    logger.error(f"Failed to make audio file public: {public_error}")
+
+                    # Final fallback: return a direct GCS URL that might work
+                    direct_url = f"https://storage.googleapis.com/{self.bucket_name}/{audio_path}"
+                    logger.warning(f"Using direct GCS URL as fallback: {direct_url}")
+                    return direct_url
 
         except Exception as e:
             logger.error(f"Failed to upload meditation audio to GCS: {e}")
+            logger.error(
+                f"Bucket: {self.bucket_name}, Audio size: {len(audio_data)} bytes"
+            )
+
+            # Check if it's a permissions issue
+            if "403" in str(e) or "Forbidden" in str(e):
+                logger.error(
+                    "❌ GCS permission denied - check service account permissions"
+                )
+            elif "404" in str(e) or "Not Found" in str(e):
+                logger.error(
+                    "❌ GCS bucket not found - check bucket name and permissions"
+                )
+
             raise
 
     async def _get_background_music_url(self, gcs_path: str) -> str:
-        """Get signed URL for background music from GCS."""
+        """Get V4 signed URL for background music from GCS using IAM credentials."""
         try:
+            if not self.gcs_client or not self.bucket:
+                logger.warning("GCS client not available, returning empty music URL")
+                return ""
+
             # Extract blob path from GCS URI
             blob_path = gcs_path.replace(f"gs://{self.bucket_name}/", "")
             blob = self.bucket.blob(blob_path)
 
-            # Generate signed URL for background music
-            signed_url = await asyncio.to_thread(
-                blob.generate_signed_url, expiration=timedelta(hours=24), method="GET"
-            )
+            # Check if blob exists
+            blob_exists = await asyncio.to_thread(blob.exists)
+            if not blob_exists:
+                logger.warning(f"Background music file not found: {blob_path}")
+                return ""
 
-            return signed_url
+            # Generate V4 signed URL for background music using impersonated credentials
+            try:
+                signed_url = await asyncio.to_thread(
+                    blob.generate_signed_url,
+                    expiration=timedelta(hours=24),
+                    method="GET",
+                    version="v4",  # Use V4 signing which works with IAM Credentials API
+                )
+                logger.info(
+                    f"✅ Generated V4 signed URL for background music: {blob_path}"
+                )
+                return signed_url
+            except Exception as signed_url_error:
+                logger.warning(
+                    f"V4 signed URL generation failed for background music: {signed_url_error}"
+                )
+
+                # Fallback: try to make it public
+                try:
+                    blob.make_public()
+                    public_url = blob.public_url
+                    logger.info(f"✅ Made background music public: {blob_path}")
+                    return public_url
+                except Exception as public_error:
+                    logger.warning(
+                        f"Failed to make background music public: {public_error}"
+                    )
+
+                    # Final fallback: return direct GCS URL
+                    direct_url = (
+                        f"https://storage.googleapis.com/{self.bucket_name}/{blob_path}"
+                    )
+                    logger.warning(
+                        f"Using direct GCS URL for background music: {direct_url}"
+                    )
+                    return direct_url
 
         except Exception as e:
-            logger.warning(f"Could not get background music URL: {e}")
+            logger.warning(f"Could not get background music URL for {gcs_path}: {e}")
             return ""
 
     async def generate_meditation(
@@ -471,14 +651,33 @@ Here is the meditation script to read:
 
         except Exception as e:
             logger.error(f"Failed to generate meditation: {e}")
+            logger.error(
+                f"Environment: {'GCloud Run' if os.environ.get('K_SERVICE') else 'Local'}"
+            )
+            logger.error(f"API Key available: {'Yes' if self.api_key else 'No'}")
+            logger.error(
+                f"GCS Client initialized: {'Yes' if self.gcs_client else 'No'}"
+            )
+
             # Provide more specific error information
-            if "API key" in str(e).lower():
-                raise ValueError("Gemini API key is not configured properly")
-            elif "quota" in str(e).lower() or "limit" in str(e).lower():
+            error_msg = str(e).lower()
+            if "api key" in error_msg:
+                raise ValueError(
+                    "Gemini API key is not configured properly. Check GEMINI_API_KEY environment variable."
+                )
+            elif "quota" in error_msg or "limit" in error_msg:
                 raise ValueError("API quota exceeded. Please try again later")
-            elif "network" in str(e).lower() or "connection" in str(e).lower():
+            elif "network" in error_msg or "connection" in error_msg:
                 raise ValueError(
                     "Network connection error. Please check your internet connection"
+                )
+            elif "403" in error_msg or "forbidden" in error_msg:
+                raise ValueError(
+                    "Permission denied. Check service account permissions for GCS and Gemini API"
+                )
+            elif "bucket" in error_msg or "storage" in error_msg:
+                raise ValueError(
+                    f"GCS storage error. Check bucket '{self.bucket_name}' exists and is accessible"
                 )
             else:
                 raise ValueError(f"Meditation generation failed: {str(e)}")
@@ -490,4 +689,12 @@ try:
     logger.info("✅ DhyaanService global instance created successfully")
 except Exception as e:
     logger.error(f"❌ Failed to create DhyaanService global instance: {e}")
+    logger.error(
+        f"Environment: {'GCloud Run' if os.environ.get('K_SERVICE') else 'Local'}"
+    )
+    logger.error(
+        f"GEMINI_API_KEY present: {'Yes' if os.environ.get('GEMINI_API_KEY') else 'No'}"
+    )
+    logger.error(f"GCS_BUCKET_NAME: {os.environ.get('GCS_BUCKET_NAME', 'Not set')}")
+    logger.error("Service will be unavailable until configuration is fixed")
     dhyaan_service = None

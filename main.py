@@ -19,13 +19,18 @@ from models.db import Base, engine
 import models  # noqa: F401 - ensure models are imported for metadata registration
 
 
-# Create Socket.IO server
+# Create Socket.IO server with GAE-compatible settings
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    # Avoid duplicate CORS headers with FastAPI CORSMiddleware; let FastAPI handle CORS
+    # Let FastAPI handle CORS to avoid conflicts
     cors_allowed_origins=[],
     logger=True,
     engineio_logger=True,
+    # GAE-compatible settings
+    ping_timeout=60,
+    ping_interval=25,
+    # Allow fallback transports for GAE
+    transports=["websocket", "polling"],
 )
 
 # Create ASGI app that combines FastAPI and Socket.IO
@@ -135,14 +140,33 @@ def setup_logging():
         colorize=True,
     )
 
-    # Add file handler for production
-    logger.add(
-        "logs/manga_wellness.log",
-        rotation="10 MB",
-        retention="7 days",
-        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-        level="INFO",
-    )
+    # Add file handler for production (use /tmp for Google App Engine)
+    import os
+
+    if os.path.exists("/tmp"):
+        # Running on App Engine - use /tmp directory
+        logger.add(
+            "/tmp/manga_wellness.log",
+            rotation="10 MB",
+            retention="7 days",
+            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+            level="INFO",
+        )
+    else:
+        # Running locally - use logs directory
+        try:
+            os.makedirs("logs", exist_ok=True)
+            logger.add(
+                "logs/manga_wellness.log",
+                rotation="10 MB",
+                retention="7 days",
+                format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+                level="INFO",
+            )
+        except OSError:
+            logger.warning(
+                "Could not create log file - continuing without file logging"
+            )
 
 
 @asynccontextmanager
@@ -203,14 +227,16 @@ app = FastAPI(
 # Mount Socket.IO app
 app.mount("/socket.io", socket_app)
 
-# Add CORS middleware
+# Add CORS middleware with production-ready settings
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
-    allow_origin_regex=".*",
+    expose_headers=["*"],
+    # Additional GAE compatibility
+    max_age=86400,
 )
 
 # Include routers

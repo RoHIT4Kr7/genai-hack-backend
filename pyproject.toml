@@ -16,7 +16,7 @@ dependencies = [
     "langchain-core>=0.3.0",
     # Google Cloud services (mandatory)
     "google-cloud-storage>=2.10.0",
-    "google-cloud-texttospeech>=2.27.0",
+    "google-cloud-texttospeech>=2.14.0",
     # Other dependencies
     "pydantic>=2.5.0",
     "pillow>=10.1.0",
@@ -41,6 +41,8 @@ dependencies = [
     "sqlalchemy>=2.0.0",
     "google-genai>=0.3.0",
     "psycopg2-binary>=2.9.0",
+    "gunicorn>=21.2.0",
+    "google-cloud-secret-manager>=2.18.0",
 ]
 
 [tool.hatch.build.targets.wheel]
