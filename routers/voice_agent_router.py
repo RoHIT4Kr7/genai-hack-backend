@@ -10,9 +10,10 @@ from loguru import logger
 from datetime import datetime
 import asyncio
 import json
+import os
 
 from models.schemas import BaseModel
-from services.voice_agent_service import voice_agent_service
+from services.voice_agent_service import voice_agent_service, voice_agent
 from sqlalchemy.orm import Session
 from models.db import get_db
 from utils.auth import get_current_user, decode_token
@@ -429,258 +430,6 @@ async def list_active_sessions() -> Dict[str, Any]:
         )
 
 
-@router.websocket("/voice/ws/{session_id}")
-async def voice_websocket_endpoint(websocket: WebSocket, session_id: str):
-    """
-    WebSocket endpoint for real-time voice agent communication.
-
-    Provides real-time updates for:
-    - Transcription results
-    - AI responses
-    - Session status changes
-    - Error notifications
-    """
-    # Accept immediately to avoid 403 handshake rejections; treat token as optional
-    await websocket.accept()
-    token = websocket.query_params.get("token")
-    user_id = None
-    if token:
-        try:
-            payload = decode_token(token)
-            user_id = payload.get("sub")
-        except Exception:
-            # Invalid token; proceed as anonymous in dev/testing
-            user_id = None
-    logger.info(
-        f"🔌 WebSocket connected for voice session: {session_id} (user_id={user_id})"
-    )
-
-    try:
-        # Check if session exists
-        if session_id not in active_sessions:
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "message": f"Voice session {session_id} not found",
-                    "timestamp": create_timestamp(),
-                }
-            )
-            await websocket.close()
-            return
-
-        # Attach user to session if present
-        if session_id in active_sessions and user_id:
-            active_sessions[session_id]["user_id"] = str(user_id)
-
-        # Ensure DB session exists and is linked to user
-        try:
-            # Note: can't use Depends in websocket; use new session
-            from models.db import SessionLocal
-
-            db_ws = SessionLocal()
-            try:
-                db_sess = (
-                    db_ws.query(DBVoiceSession)
-                    .filter(DBVoiceSession.session_id == session_id)
-                    .first()
-                )
-                if db_sess and not db_sess.user_id and user_id:
-                    db_sess.user_id = int(user_id)
-                    db_ws.commit()
-            finally:
-                db_ws.close()
-        except Exception as e:
-            logger.warning(
-                f"WS linking DB voice session user failed for {session_id}: {e}"
-            )
-
-        # Send initial status
-        await websocket.send_json(
-            {
-                "type": "session_status",
-                "session_id": session_id,
-                "status": active_sessions[session_id]["status"],
-                "message": "WebSocket connected to voice session",
-                "timestamp": create_timestamp(),
-            }
-        )
-
-        # Keep connection alive and send updates
-        last_transcription = None
-        last_response = None
-
-        while True:
-            try:
-                # Check for new transcriptions
-                current_transcription = active_sessions[session_id].get(
-                    "last_transcription"
-                )
-                if (
-                    current_transcription
-                    and current_transcription != last_transcription
-                ):
-                    await websocket.send_json(
-                        {
-                            "type": "transcription",
-                            "session_id": session_id,
-                            "text": current_transcription["text"],
-                            "timestamp": current_transcription["timestamp"],
-                        }
-                    )
-                    last_transcription = current_transcription
-
-                # Check for new responses
-                current_response = active_sessions[session_id].get("last_response")
-                if current_response and current_response != last_response:
-                    await websocket.send_json(
-                        {
-                            "type": "ai_response",
-                            "session_id": session_id,
-                            "text": current_response["text"],
-                            "timestamp": current_response["timestamp"],
-                        }
-                    )
-                    last_response = current_response
-
-                # Check if session is still active
-                if active_sessions[session_id]["status"] != "active":
-                    await websocket.send_json(
-                        {
-                            "type": "session_ended",
-                            "session_id": session_id,
-                            "message": "Voice session has ended",
-                            "timestamp": create_timestamp(),
-                        }
-                    )
-                    break
-
-                await asyncio.sleep(0.5)  # Check for updates every 500ms
-
-            except WebSocketDisconnect:
-                break
-            except Exception as e:
-                logger.error(f"WebSocket error for session {session_id}: {e}")
-                await websocket.send_json(
-                    {
-                        "type": "error",
-                        "message": f"WebSocket error: {str(e)}",
-                        "timestamp": create_timestamp(),
-                    }
-                )
-                break
-
-    except WebSocketDisconnect:
-        logger.info(f"🔌 WebSocket disconnected for voice session: {session_id}")
-    except Exception as e:
-        logger.error(f"❌ WebSocket error for session {session_id}: {e}")
-    finally:
-        logger.info(f"🔌 WebSocket connection closed for voice session: {session_id}")
-
-        # CRITICAL: Stop the voice agent session when WebSocket disconnects
-        try:
-            if session_id in active_sessions:
-                logger.info(
-                    f"🛑 Auto-stopping voice session due to WebSocket disconnect: {session_id}"
-                )
-                await voice_agent_service.stop_session(session_id)
-
-                # Update session status
-                if session_id in active_sessions:
-                    active_sessions[session_id]["status"] = "stopped"
-                    active_sessions[session_id]["stopped_at"] = create_timestamp()
-                # Persist DB status update
-                try:
-                    from models.db import SessionLocal
-
-                    db_ws = SessionLocal()
-                    try:
-                        db_sess = (
-                            db_ws.query(DBVoiceSession)
-                            .filter(DBVoiceSession.session_id == session_id)
-                            .first()
-                        )
-                        if db_sess:
-                            db_sess.status = "stopped"
-                            db_sess.stopped_at = datetime.utcnow()
-                            db_ws.commit()
-                    finally:
-                        db_ws.close()
-                except Exception as e:
-                    logger.warning(
-                        f"WS disconnect DB voice session update failed for {session_id}: {e}"
-                    )
-
-                logger.success(
-                    f"✅ Voice session {session_id} stopped due to WebSocket disconnect"
-                )
-        except Exception as cleanup_error:
-            logger.error(
-                f"❌ Error during WebSocket disconnect cleanup: {cleanup_error}"
-            )
-
-
-@router.get("/voice/health")
-async def voice_agent_health() -> Dict[str, Any]:
-    """
-    Health check endpoint for voice agent service.
-
-    Checks:
-    - Google Gemini API connectivity
-    - Audio system availability
-    - Active sessions status
-    """
-    try:
-        health_status = {
-            "service": "voice_agent",
-            "status": "healthy",
-            "timestamp": create_timestamp(),
-            "checks": {},
-        }
-
-        # Check Gemini API key
-        import os
-
-        gemini_key = os.environ.get("GEMINI_API_KEY")
-        health_status["checks"]["gemini_api_key"] = (
-            "configured" if gemini_key else "missing"
-        )
-
-        # Check PyAudio availability
-        try:
-            import pyaudio
-
-            pya = pyaudio.PyAudio()
-            device_count = pya.get_device_count()
-            pya.terminate()
-            health_status["checks"][
-                "audio_system"
-            ] = f"available ({device_count} devices)"
-        except Exception as e:
-            health_status["checks"]["audio_system"] = f"error: {str(e)}"
-            health_status["status"] = "degraded"
-
-        # Check active sessions
-        active_count = len(
-            [s for s in active_sessions.values() if s["status"] == "active"]
-        )
-        health_status["checks"]["active_sessions"] = active_count
-
-        # Overall health determination
-        if health_status["checks"]["gemini_api_key"] == "missing":
-            health_status["status"] = "unhealthy"
-
-        return health_status
-
-    except Exception as e:
-        logger.error(f"❌ Voice agent health check failed: {e}")
-        return {
-            "service": "voice_agent",
-            "status": "unhealthy",
-            "error": str(e),
-            "timestamp": create_timestamp(),
-        }
-
-
 @router.get("/voice")
 async def voice_agent_info() -> Dict[str, Any]:
     """
@@ -716,3 +465,211 @@ async def voice_agent_info() -> Dict[str, Any]:
         "model": "gemini-2.5-flash-live-preview",
         "timestamp": create_timestamp(),
     }
+
+
+# New PyAudio-free WebSocket endpoint for client-side audio processing
+@router.websocket("/voice/ws/{session_id}")
+async def voice_websocket_endpoint(websocket: WebSocket, session_id: str):
+    """WebSocket endpoint for real-time voice communication."""
+    logger.info(f"🔌 WebSocket endpoint called for session: {session_id}")
+
+    try:
+        await websocket.accept()
+        logger.info(f"✅ WebSocket connection accepted for session: {session_id}")
+    except Exception as e:
+        logger.error(f"❌ Failed to accept WebSocket connection for {session_id}: {e}")
+        return
+
+    # Track connection state
+    is_connected = True
+
+    try:
+        # Create voice session
+        logger.info(f"🎤 Attempting to create voice session: {session_id}")
+        success = await voice_agent.create_session(session_id, websocket)
+        logger.info(f"🔍 Session creation result for {session_id}: {success}")
+
+        if not success:
+            error_msg = (
+                "Failed to create voice session - check Gemini API key and connection"
+            )
+            logger.error(f"❌ {error_msg} for session: {session_id}")
+            try:
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "type": "error",
+                            "message": error_msg,
+                            "timestamp": voice_agent._get_timestamp(),
+                        }
+                    )
+                )
+            except Exception:
+                pass  # WebSocket might already be closed
+            return
+
+        logger.info(f"✅ Voice session created successfully: {session_id}")
+
+        # Send connection confirmation
+        try:
+            await websocket.send_text(
+                json.dumps(
+                    {
+                        "type": "session_status",
+                        "session_id": session_id,
+                        "status": "connected",
+                        "message": "Voice session ready",
+                        "timestamp": voice_agent._get_timestamp(),
+                    }
+                )
+            )
+            logger.info(f"📤 Sent connection confirmation for session: {session_id}")
+        except Exception as e:
+            logger.warning(f"Failed to send connection confirmation: {e}")
+            is_connected = False
+
+        # Handle incoming messages
+        while is_connected:
+            try:
+                logger.debug(f"🔄 Waiting for messages from session: {session_id}")
+
+                # Use a timeout to periodically check connection state
+                data = await asyncio.wait_for(websocket.receive(), timeout=1.0)
+                logger.debug(f"📥 Received data for session {session_id}: {type(data)}")
+
+                if "text" in data:
+                    # Handle text message
+                    try:
+                        message_data = json.loads(data["text"])
+                        logger.info(
+                            f"📝 Text message for {session_id}: {message_data.get('type', 'unknown')}"
+                        )
+
+                        if message_data.get("type") == "text_message":
+                            success = await voice_agent.handle_text_message(
+                                session_id, message_data.get("message", "")
+                            )
+
+                            if success and is_connected:
+                                try:
+                                    await websocket.send_text(
+                                        json.dumps(
+                                            {
+                                                "type": "message_sent",
+                                                "session_id": session_id,
+                                                "status": "sent",
+                                                "timestamp": voice_agent._get_timestamp(),
+                                            }
+                                        )
+                                    )
+                                except Exception:
+                                    is_connected = False
+                                    break
+                        elif message_data.get("type") == "end_turn":
+                            success = await voice_agent.end_turn(session_id)
+                            if success and is_connected:
+                                try:
+                                    await websocket.send_text(
+                                        json.dumps(
+                                            {
+                                                "type": "turn_ended",
+                                                "session_id": session_id,
+                                                "timestamp": voice_agent._get_timestamp(),
+                                            }
+                                        )
+                                    )
+                                except Exception:
+                                    is_connected = False
+                                    break
+                    except json.JSONDecodeError as e:
+                        logger.warning(
+                            f"Invalid JSON in text message for {session_id}: {e}"
+                        )
+
+                elif "bytes" in data:
+                    # Handle binary audio data
+                    audio_data = data["bytes"]
+                    logger.debug(
+                        f"🎵 Audio data for {session_id}: {len(audio_data)} bytes"
+                    )
+                    await voice_agent.handle_audio_data(session_id, audio_data)
+
+            except asyncio.TimeoutError:
+                # Timeout is expected, continue the loop
+                continue
+            except WebSocketDisconnect:
+                logger.info(f"🔌 Client disconnected from session: {session_id}")
+                is_connected = False
+                break
+            except Exception as e:
+                logger.error(f"❌ WebSocket message error for {session_id}: {e}")
+                # Try to send error message if connection is still alive
+                if is_connected:
+                    try:
+                        await websocket.send_text(
+                            json.dumps(
+                                {
+                                    "type": "error",
+                                    "message": f"Message handling error: {str(e)}",
+                                    "timestamp": voice_agent._get_timestamp(),
+                                }
+                            )
+                        )
+                    except Exception:
+                        # WebSocket is probably closed
+                        is_connected = False
+                        break
+
+    except WebSocketDisconnect:
+        logger.info(f"🔌 WebSocket disconnected during setup: {session_id}")
+    except Exception as e:
+        logger.error(f"❌ WebSocket endpoint error for {session_id}: {e}")
+        logger.error(f"❌ Exception type: {type(e).__name__}")
+        logger.error(f"❌ Exception details: {str(e)}")
+    finally:
+        logger.info(f"🧹 Cleaning up session: {session_id}")
+        # Clean up session
+        try:
+            await voice_agent.stop_session(session_id)
+            logger.info(f"✅ Session cleanup completed: {session_id}")
+        except Exception as e:
+            logger.warning(f"Error during session cleanup for {session_id}: {e}")
+
+
+# Updated health check (no PyAudio dependencies)
+@router.get("/voice/health")
+async def voice_agent_health():
+    """Health check for voice agent service."""
+    try:
+        health_status = {
+            "service": "voice_agent",
+            "status": "healthy",
+            "timestamp": voice_agent._get_timestamp(),
+            "checks": {},
+        }
+
+        # Check Gemini API key
+        gemini_key = os.environ.get("GEMINI_API_KEY")
+        health_status["checks"]["gemini_api_key"] = (
+            "configured" if gemini_key else "missing"
+        )
+
+        # Audio processing now client-side
+        health_status["checks"]["audio_system"] = "client-side (Web Audio API)"
+
+        # Check active sessions
+        active_count = len(voice_agent.active_sessions)
+        health_status["checks"]["active_sessions"] = active_count
+
+        if not gemini_key:
+            health_status["status"] = "unhealthy"
+
+        return health_status
+
+    except Exception as e:
+        return {
+            "service": "voice_agent",
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": voice_agent._get_timestamp(),
+        }

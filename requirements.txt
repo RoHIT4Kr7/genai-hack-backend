@@ -43,9 +43,10 @@ protobuf>=3.20.2,<6.0.0
 numpy>=1.21.0
 typing-extensions>=4.0.0
 
-# Voice Agent dependencies
-pyaudio>=0.2.11
+# Voice Agent dependencies (optional for cloud deployment)
+# pyaudio>=0.2.11  # Commented out for Google App Engine compatibility
 
 # Auth and database for Google Sign-In
 python-jose[cryptography]>=3.3.0
 SQLAlchemy>=2.0.0
+psycopg2-binary>=2.9.0

@@ -1,8 +1,13 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 import os
+from dotenv import load_dotenv
 
+# Load environment variables from .env file for local development
+load_dotenv()
 
+# Use DATABASE_URL from environment for production (Supabase)
+# Fall back to SQLite for local development if not set
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./calmira.db")
 
 engine = create_engine(

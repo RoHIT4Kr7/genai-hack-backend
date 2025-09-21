@@ -1,0 +1,118 @@
+# Use your .gitignore rules as a base
+
+.gcloudignore
+.git
+.gitignore
+
+# Environment variables
+
+.env
+.env.local
+.env.\*.local
+
+# Google Cloud credentials (never upload secrets!)
+
+servicekey.json
+credentials/
+gcp-credentials/
+
+# Python virtual environments
+
+.venv/
+venv/
+env/
+ENV/
+
+# Python cache and build artifacts
+
+**pycache**/
+_.py[cod]
+_$py.class
+_.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+_.egg-info/
+.installed.cfg
+\*.egg
+
+# IDE and editor files
+
+.vscode/
+.idea/
+_.swp
+_.swo
+\*~
+
+# OS generated files
+
+.DS*Store
+.DS_Store?
+.*\*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Testing and coverage
+
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.\*
+htmlcov/
+.tox/
+.nox/
+
+# Logs
+
+\*.log
+logs/
+
+# Temporary files
+
+_.tmp
+_.temp
+temp/
+tmp/
+
+# Audio and media files (optional: if generated dynamically, ignore them)
+
+_.mp3
+_.wav
+_.png
+_.jpg
+_.jpeg
+_.gif
+\*.mp4
+
+# Streamlit specific
+
+.streamlit/
+
+# Jupyter Notebook
+
+.ipynb_checkpoints/
+
+# pyenv
+
+.python-version
+
+# pipenv
+
+Pipfile.lock
+
+# poetry
+
+poetry.lock
