@@ -82,6 +82,12 @@ calmira.db
 *_IAM_*.md
 DHYAAN_*.md
 
+# Cloud deployment configurations (avoid deploying config files)
+cloudrun-service.yaml
+*.yaml
+*.yml
+!cloudbuild.yaml
+
 # Logs
 
 \*.log

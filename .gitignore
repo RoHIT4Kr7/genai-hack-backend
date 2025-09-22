@@ -104,6 +104,15 @@ settings.local.*
 *_IAM_*.md
 DHYAAN_*.md
 
+# Cloud deployment configurations with sensitive info
+cloudrun-service.yaml
+*.yaml
+*.yml
+!docker-compose.yml
+!.github/workflows/*.yml
+
+# Backup files
+
 # Temporary files
 *.tmp
 *.temp
