@@ -76,6 +76,12 @@ htmlcov/
 .nox/
 app.db
 calmira.db
+
+# Sensitive documentation and implementation details
+*_IMPLEMENTATION.md
+*_IAM_*.md
+DHYAAN_*.md
+
 # Logs
 
 \*.log

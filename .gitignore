@@ -99,6 +99,11 @@ pnpm-lock.yaml
 config.local.*
 settings.local.*
 
+# Sensitive documentation and implementation details
+*_IMPLEMENTATION.md
+*_IAM_*.md
+DHYAAN_*.md
+
 # Temporary files
 *.tmp
 *.temp
