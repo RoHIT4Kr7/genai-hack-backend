@@ -74,7 +74,8 @@ Thumbs.db
 htmlcov/
 .tox/
 .nox/
-
+app.db
+calmira.db
 # Logs
 
 \*.log
