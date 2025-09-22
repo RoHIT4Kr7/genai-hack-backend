@@ -3,11 +3,25 @@
 .env.local
 .env.*.local
 
+# API Keys and secrets
+*.key
+*.pem
+*.p12
+*.pfx
+secret.txt
+secrets/
+api_keys.txt
+
 # Google Cloud credentials
 servicekey.json
 app.yaml
 credentials/
 gcp-credentials/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
 
 # Python virtual environments
 .venv
@@ -66,6 +80,24 @@ htmlcov/
 # Logs
 *.log
 logs/
+*.log.*
+*.out
+*.err
+
+# Lock files (except for production dependency management)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+
+# User-specific config files
+config.local.*
+settings.local.*
 
 # Temporary files
 *.tmp
