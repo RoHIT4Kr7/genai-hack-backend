@@ -111,6 +111,12 @@ cloudrun-service.yaml
 !docker-compose.yml
 !.github/workflows/*.yml
 
+# Deployment scripts with project-specific info
+deploy-*.ps1
+deploy-*.sh
+setup-*.ps1
+setup-*.sh
+
 # Backup files
 
 # Temporary files
